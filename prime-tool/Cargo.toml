@@ -1,0 +1,32 @@
+[package]
+name = "prime-tool"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance prime number research library with advanced algorithms"
+license = "MIT"
+authors = ["Prime Research Tool Contributors"]
+
+[dependencies]
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+once_cell = { workspace = true }
+log = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde_json.workspace = true
+
+[dev-dependencies]
+criterion = { workspace = true }
+tokio-test = "0.4"
+
+[[bench]]
+name = "primality_bench"
+harness = false
+
+[[bench]]
+name = "factorization_bench"
+harness = false

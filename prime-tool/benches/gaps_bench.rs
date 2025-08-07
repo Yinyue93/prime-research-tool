@@ -1,0 +1,498 @@
+//! Criterion benchmarks for prime gap analysis algorithms
+
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use prime_tool::*;
+use std::ops::Range;
+
+/// Benchmark gap analysis by range size
+fn bench_gap_analysis_by_range_size(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gap_analysis_by_range_size");
+    
+    let range_configs = vec![
+        ("small", 2..10_000),
+        ("medium", 2..100_000),
+        ("large", 2..1_000_000),
+        ("xlarge", 2..5_000_000),
+    ];
+    
+    for (size_name, range) in range_configs {
+        let range_size = range.end - range.start;
+        group.throughput(Throughput::Elements(range_size));
+        
+        group.bench_with_input(
+            BenchmarkId::new("find_gaps", size_name),
+            &range,
+            |b, range| {
+                b.iter(|| {
+                    let gaps = black_box(gaps::find_gaps(black_box(range.clone())));
+                    black_box(gaps.len());
+                });
+            },
+        );
+        
+        group.bench_with_input(
+            BenchmarkId::new("analyze_gaps", size_name),
+            &range,
+            |b, range| {
+                b.iter(|| {
+                    let stats = black_box(gaps::analyze_gaps(black_box(range.clone())));
+                    black_box(stats.total_gaps);
+                });
+            },
+        );
+    }
+    
+    group.finish();
+}
+
+/// Benchmark different types of prime pair finding
+fn bench_prime_pairs(c: &mut Criterion) {
+    let mut group = c.benchmark_group("prime_pairs");
+    
+    let test_range = 2..1_000_000;
+    let range_size = test_range.end - test_range.start;
+    group.throughput(Throughput::Elements(range_size));
+    
+    // Twin primes (gap = 2)
+    group.bench_function("twin_primes", |b| {
+        b.iter(|| {
+            let twins = black_box(gaps::find_twin_primes(black_box(test_range.clone())));
+            black_box(twins.len());
+        });
+    });
+    
+    // Cousin primes (gap = 4)
+    group.bench_function("cousin_primes", |b| {
+        b.iter(|| {
+            let cousins = black_box(gaps::find_cousin_primes(black_box(test_range.clone())));
+            black_box(cousins.len());
+        });
+    });
+    
+    // Sexy primes (gap = 6)
+    group.bench_function("sexy_primes", |b| {
+        b.iter(|| {
+            let sexy = black_box(gaps::find_sexy_primes(black_box(test_range.clone())));
+            black_box(sexy.len());
+        });
+    });
+    
+    // All prime pairs with specific gaps
+    let gap_sizes = vec![2, 4, 6, 8, 10, 12, 14];
+    for gap in gap_sizes {
+        group.bench_with_input(
+            BenchmarkId::new("prime_pairs_gap", gap),
+            &gap,
+            |b, &gap_size| {
+                b.iter(|| {
+                    let pairs = black_box(gaps::find_prime_pairs_with_gap(
+                        black_box(test_range.clone()),
+                        black_box(gap_size),
+                    ));
+                    black_box(pairs.len());
+                });
+            },
+        );
+    }
+    
+    group.finish();
+}
+
+/// Benchmark gap statistics computation
+fn bench_gap_statistics(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gap_statistics");
+    
+    let test_range = 2..1_000_000;
+    let range_size = test_range.end - test_range.start;
+    group.throughput(Throughput::Elements(range_size));
+    
+    // Basic gap statistics
+    group.bench_function("basic_statistics", |b| {
+        b.iter(|| {
+            let stats = black_box(gaps::analyze_gaps(black_box(test_range.clone())));
+            black_box(stats.mean_gap);
+        });
+    });
+    
+    // Detailed gap distribution
+    group.bench_function("gap_distribution", |b| {
+        b.iter(|| {
+            let distribution = black_box(gaps::gap_distribution(black_box(test_range.clone())));
+            black_box(distribution.len());
+        });
+    });
+    
+    // Maximal gaps
+    group.bench_function("maximal_gaps", |b| {
+        b.iter(|| {
+            let maximal = black_box(gaps::find_maximal_gaps(black_box(test_range.clone())));
+            black_box(maximal.len());
+        });
+    });
+    
+    // First occurrence of each gap size
+    group.bench_function("first_gaps", |b| {
+        b.iter(|| {
+            let first_gaps = black_box(gaps::find_first_gaps(black_box(test_range.clone())));
+            black_box(first_gaps.len());
+        });
+    });
+    
+    group.finish();
+}
+
+/// Benchmark gap analysis with different starting points
+fn bench_gap_analysis_different_starts(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gap_analysis_different_starts");
+    
+    let range_size = 100_000u64;
+    let start_points = vec![
+        ("from_2", 2),
+        ("from_1k", 1_000),
+        ("from_100k", 100_000),
+        ("from_1m", 1_000_000),
+        ("from_10m", 10_000_000),
+    ];
+    
+    group.throughput(Throughput::Elements(range_size));
+    
+    for (start_name, start) in start_points {
+        let range = start..(start + range_size);
+        
+        group.bench_with_input(
+            BenchmarkId::new("gaps_from_start", start_name),
+            &range,
+            |b, range| {
+                b.iter(|| {
+                    let gaps = black_box(gaps::find_gaps(black_box(range.clone())));
+                    black_box(gaps.len());
+                });
+            },
+        );
+    }
+    
+    group.finish();
+}
+
+/// Benchmark parallel gap analysis
+fn bench_parallel_gap_analysis(c: &mut Criterion) {
+    let mut group = c.benchmark_group("parallel_gap_analysis");
+    
+    let test_range = 2..5_000_000;
+    let range_size = test_range.end - test_range.start;
+    group.throughput(Throughput::Elements(range_size));
+    
+    // Sequential gap analysis
+    group.bench_function("sequential", |b| {
+        b.iter(|| {
+            let gaps = black_box(gaps::find_gaps(black_box(test_range.clone())));
+            black_box(gaps.len());
+        });
+    });
+    
+    // Parallel gap analysis
+    group.bench_function("parallel", |b| {
+        b.iter(|| {
+            let gaps = black_box(gaps::parallel_find_gaps(black_box(test_range.clone())));
+            black_box(gaps.len());
+        });
+    });
+    
+    // Parallel twin prime search
+    group.bench_function("parallel_twin_primes", |b| {
+        b.iter(|| {
+            let twins = black_box(gaps::parallel_find_twin_primes(black_box(test_range.clone())));
+            black_box(twins.len());
+        });
+    });
+    
+    group.finish();
+}
+
+/// Benchmark gap analysis memory usage patterns
+fn bench_gap_analysis_memory(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gap_analysis_memory");
+    
+    let memory_configs = vec![
+        ("small_memory", 2..50_000),
+        ("medium_memory", 2..500_000),
+        ("large_memory", 2..5_000_000),
+    ];
+    
+    for (memory_name, range) in memory_configs {
+        let range_size = range.end - range.start;
+        group.throughput(Throughput::Elements(range_size));
+        
+        // Memory-efficient gap finding (streaming)
+        group.bench_with_input(
+            BenchmarkId::new("streaming_gaps", memory_name),
+            &range,
+            |b, range| {
+                b.iter(|| {
+                    let gap_count = black_box(gaps::count_gaps_streaming(black_box(range.clone())));
+                    black_box(gap_count);
+                });
+            },
+        );
+        
+        // Full gap collection
+        group.bench_with_input(
+            BenchmarkId::new("collect_all_gaps", memory_name),
+            &range,
+            |b, range| {
+                b.iter(|| {
+                    let gaps = black_box(gaps::find_gaps(black_box(range.clone())));
+                    black_box(gaps.len());
+                });
+            },
+        );
+    }
+    
+    group.finish();
+}
+
+/// Benchmark specific gap analysis algorithms
+fn bench_gap_algorithms(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gap_algorithms");
+    
+    let test_range = 2..1_000_000;
+    let range_size = test_range.end - test_range.start;
+    group.throughput(Throughput::Elements(range_size));
+    
+    // Sieve-based gap finding
+    group.bench_function("sieve_based", |b| {
+        b.iter(|| {
+            let gaps = black_box(gaps::sieve_based_gaps(black_box(test_range.clone())));
+            black_box(gaps.len());
+        });
+    });
+    
+    // Iterator-based gap finding
+    group.bench_function("iterator_based", |b| {
+        b.iter(|| {
+            let gaps = black_box(gaps::iterator_based_gaps(black_box(test_range.clone())));
+            black_box(gaps.len());
+        });
+    });
+    
+    // Incremental gap finding
+    group.bench_function("incremental", |b| {
+        b.iter(|| {
+            let gaps = black_box(gaps::incremental_gaps(black_box(test_range.clone())));
+            black_box(gaps.len());
+        });
+    });
+    
+    group.finish();
+}
+
+/// Benchmark gap verification and validation
+fn bench_gap_verification(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gap_verification");
+    
+    let test_range = 2..100_000;
+    let gaps = gaps::find_gaps(test_range.clone());
+    
+    group.throughput(Throughput::Elements(gaps.len() as u64));
+    
+    // Verify gap correctness
+    group.bench_function("verify_gaps", |b| {
+        b.iter(|| {
+            let is_valid = black_box(gaps::verify_gaps(black_box(&gaps)));
+            black_box(is_valid);
+        });
+    });
+    
+    // Verify twin primes
+    let twin_primes = gaps::find_twin_primes(test_range.clone());
+    group.bench_function("verify_twin_primes", |b| {
+        b.iter(|| {
+            let is_valid = black_box(gaps::verify_twin_primes(black_box(&twin_primes)));
+            black_box(is_valid);
+        });
+    });
+    
+    // Verify maximal gaps
+    let maximal_gaps = gaps::find_maximal_gaps(test_range);
+    group.bench_function("verify_maximal_gaps", |b| {
+        b.iter(|| {
+            let is_valid = black_box(gaps::verify_maximal_gaps(black_box(&maximal_gaps)));
+            black_box(is_valid);
+        });
+    });
+    
+    group.finish();
+}
+
+/// Benchmark Bertrand's postulate verification
+fn bench_bertrand_postulate(c: &mut Criterion) {
+    let mut group = c.benchmark_group("bertrand_postulate");
+    
+    let test_numbers = vec![
+        ("small", vec![10, 25, 50, 100]),
+        ("medium", vec![1_000, 2_500, 5_000, 10_000]),
+        ("large", vec![100_000, 250_000, 500_000, 1_000_000]),
+    ];
+    
+    for (size_name, numbers) in test_numbers {
+        group.throughput(Throughput::Elements(numbers.len() as u64));
+        
+        group.bench_with_input(
+            BenchmarkId::new("bertrand_verification", size_name),
+            &numbers,
+            |b, numbers| {
+                b.iter(|| {
+                    for &n in numbers {
+                        let result = black_box(gaps::verify_bertrand_postulate(black_box(n)));
+                        black_box(result);
+                    }
+                });
+            },
+        );
+    }
+    
+    group.finish();
+}
+
+/// Benchmark gap prediction and estimation
+fn bench_gap_prediction(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gap_prediction");
+    
+    let test_numbers = generate_test_primes(1000);
+    group.throughput(Throughput::Elements(test_numbers.len() as u64));
+    
+    // Expected maximum gap estimation
+    group.bench_function("expected_max_gap", |b| {
+        b.iter(|| {
+            for &n in &test_numbers {
+                let expected = black_box(gaps::expected_max_gap(black_box(n)));
+                black_box(expected);
+            }
+        });
+    });
+    
+    // Large gap detection
+    group.bench_function("large_gap_detection", |b| {
+        b.iter(|| {
+            for &n in &test_numbers {
+                let is_large = black_box(gaps::is_large_gap(black_box(n), black_box(14)));
+                black_box(is_large);
+            }
+        });
+    });
+    
+    // Gap probability estimation
+    group.bench_function("gap_probability", |b| {
+        b.iter(|| {
+            for &n in &test_numbers {
+                let prob = black_box(gaps::gap_probability(black_box(n), black_box(6)));
+                black_box(prob);
+            }
+        });
+    });
+    
+    group.finish();
+}
+
+/// Benchmark gap analysis with different data structures
+fn bench_gap_data_structures(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gap_data_structures");
+    
+    let test_range = 2..500_000;
+    let range_size = test_range.end - test_range.start;
+    group.throughput(Throughput::Elements(range_size));
+    
+    // Vector-based gap storage
+    group.bench_function("vector_gaps", |b| {
+        b.iter(|| {
+            let gaps = black_box(gaps::find_gaps_vector(black_box(test_range.clone())));
+            black_box(gaps.len());
+        });
+    });
+    
+    // HashMap-based gap frequency
+    group.bench_function("hashmap_frequency", |b| {
+        b.iter(|| {
+            let freq = black_box(gaps::gap_frequency_hashmap(black_box(test_range.clone())));
+            black_box(freq.len());
+        });
+    });
+    
+    // BTreeMap-based gap frequency (sorted)
+    group.bench_function("btreemap_frequency", |b| {
+        b.iter(|| {
+            let freq = black_box(gaps::gap_frequency_btreemap(black_box(test_range.clone())));
+            black_box(freq.len());
+        });
+    });
+    
+    // Compressed gap representation
+    group.bench_function("compressed_gaps", |b| {
+        b.iter(|| {
+            let compressed = black_box(gaps::compressed_gaps(black_box(test_range.clone())));
+            black_box(compressed.len());
+        });
+    });
+    
+    group.finish();
+}
+
+/// Benchmark gap analysis with caching
+fn bench_gap_caching(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gap_caching");
+    
+    let test_ranges = vec![
+        2..10_000,
+        5_000..15_000,
+        10_000..20_000,
+        15_000..25_000,
+    ];
+    
+    // Without caching
+    group.bench_function("no_cache", |b| {
+        b.iter(|| {
+            for range in &test_ranges {
+                let gaps = black_box(gaps::find_gaps(black_box(range.clone())));
+                black_box(gaps.len());
+            }
+        });
+    });
+    
+    // With caching
+    group.bench_function("with_cache", |b| {
+        b.iter(|| {
+            let mut cache = gaps::GapCache::new();
+            for range in &test_ranges {
+                let gaps = black_box(cache.find_gaps_cached(black_box(range.clone())));
+                black_box(gaps.len());
+            }
+        });
+    });
+    
+    group.finish();
+}
+
+// Helper functions
+
+/// Generate test primes for benchmarking
+fn generate_test_primes(count: usize) -> Vec<u64> {
+    let primes = sieve_range(2..100_000);
+    primes.into_iter().take(count).collect()
+}
+
+criterion_group!(
+    benches,
+    bench_gap_analysis_by_range_size,
+    bench_prime_pairs,
+    bench_gap_statistics,
+    bench_gap_analysis_different_starts,
+    bench_parallel_gap_analysis,
+    bench_gap_analysis_memory,
+    bench_gap_algorithms,
+    bench_gap_verification,
+    bench_bertrand_postulate,
+    bench_gap_prediction,
+    bench_gap_data_structures,
+    bench_gap_caching
+);
+criterion_main!(benches);

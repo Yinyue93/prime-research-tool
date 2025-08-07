@@ -1,0 +1,56 @@
+[package]
+name = "prime-tool-bench"
+version = "0.1.0"
+edition = "2021"
+authors = ["Prime Research Tool Contributors"]
+description = "Comprehensive benchmarking suite for the Prime Research Tool"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/example/prime-research-tool"
+keywords = ["prime", "mathematics", "benchmark", "performance"]
+categories = ["mathematics", "development-tools::profiling"]
+
+[[bin]]
+name = "prime-tool-bench"
+path = "src/main.rs"
+
+[dependencies]
+# Core library
+prime-tool = { path = "../prime-tool" }
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# Parallelism
+rayon = "1.8"
+
+# Utilities
+rand = "0.8"
+once_cell = "1.19"
+
+# Serialization for results
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+
+# Statistics
+statistical = "1.0"
+
+# Table formatting
+comfy-table = "7.1"
+
+# Plotting for benchmark results
+plotters = "0.3"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+# Benchmark targets are automatically discovered from benches/ directory

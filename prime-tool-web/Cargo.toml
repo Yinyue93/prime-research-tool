@@ -1,0 +1,45 @@
+[package]
+name = "prime-tool-web"
+version = "0.1.0"
+edition = "2021"
+authors = ["Prime Research Tool Contributors"]
+description = "Web service for the Prime Research Tool - REST API built with Axum"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/example/prime-research-tool"
+keywords = ["prime", "mathematics", "web", "api", "rest"]
+categories = ["mathematics", "web-programming::http-server"]
+
+[[bin]]
+name = "prime-tool-web"
+path = "src/main.rs"
+
+[dependencies]
+# Core library
+prime-tool = { path = "../prime-tool" }
+
+# Web framework
+axum = "0.7"
+tokio = { version = "1.0", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+log = "0.4"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+
+[dev-dependencies]
+axum-test = "14.0"
+tokio-test = "0.4"

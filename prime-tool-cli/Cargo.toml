@@ -1,0 +1,24 @@
+[package]
+name = "prime-tool-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Command-line interface for the Prime Research Tool"
+license = "MIT"
+[[bin]]
+name = "prime-tool"
+path = "src/main.rs"
+
+[dependencies]
+prime-tool = { path = "../prime-tool" }
+clap = { workspace = true }
+tokio = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+csv = { workspace = true }
+plotters = { workspace = true }
+comfy-table = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
