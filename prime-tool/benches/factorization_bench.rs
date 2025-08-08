@@ -374,9 +374,9 @@ fn generate_semiprimes_in_range(min: u64, max: u64, count: usize) -> Vec<u64> {
     let mut semiprimes = Vec::new();
     let mut rng = rand::thread_rng();
     let mut attempts = 0;
-    const MAX_ATTEMPTS: usize = count * 10;
+    let max_attempts = count * 10;
     
-    while semiprimes.len() < count && attempts < MAX_ATTEMPTS {
+    while semiprimes.len() < count && attempts < max_attempts {
         attempts += 1;
         
         // Generate a random number in range
@@ -434,7 +434,7 @@ fn generate_numbers_with_many_factors(count: usize) -> Vec<u64> {
     let mut numbers = Vec::with_capacity(count);
     
     // Start with highly composite numbers
-    let base_numbers = vec![
+    let base_numbers: Vec<u64> = vec![
         2 * 3 * 5 * 7 * 11 * 13,
         2 * 3 * 5 * 7 * 11 * 13 * 17,
         2 * 3 * 5 * 7 * 11 * 13 * 17 * 19,

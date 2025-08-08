@@ -9,15 +9,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, RwLock};
-use tokio::time::{timeout, Duration};
+use tokio::sync::{Mutex, RwLock};
+use tokio::time::Duration;
 
 /// Work unit for distributed computation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkUnit {
     pub id: String,
-    pub range: Range<u64>,
-    pub task_type: TaskType,
+    pub task: TaskType,
     pub priority: u8,
     pub estimated_duration_ms: u64,
 }
@@ -25,10 +24,10 @@ pub struct WorkUnit {
 /// Types of tasks that can be distributed
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TaskType {
-    PrimeSieve,
+    PrimeSieve { range: Range<u64> },
     PrimalityTest { numbers: Vec<u64> },
     Factorization { numbers: Vec<u64> },
-    GapAnalysis,
+    GapAnalysis { range: Range<u64> },
 }
 
 /// Result of a completed work unit
@@ -118,7 +117,7 @@ impl DistributedCoordinator {
         
         // Find suitable work for this node
         let work_index = queue.iter().position(|work| {
-            self.can_node_handle_task(node, &work.task_type)
+            self.can_node_handle_task(node, &work.task)
         });
         
         if let Some(index) = work_index {
@@ -164,8 +163,7 @@ impl DistributedCoordinator {
             
             let work = WorkUnit {
                 id: format!("sieve_{}_{}", chunk_start, chunk_end),
-                range: chunk_start..chunk_end,
-                task_type: TaskType::PrimeSieve,
+                task: TaskType::PrimeSieve { range: chunk_start..chunk_end },
                 priority: 5,
                 estimated_duration_ms: estimate_sieve_time(chunk_end - chunk_start),
             };
@@ -264,10 +262,10 @@ impl DistributedCoordinator {
     fn can_node_handle_task(&self, node: &NodeInfo, task_type: &TaskType) -> bool {
         // Simple capability matching
         match task_type {
-            TaskType::PrimeSieve => node.cpu_cores >= 2,
+            TaskType::PrimeSieve { .. } => node.cpu_cores >= 2,
             TaskType::PrimalityTest { .. } => true,
             TaskType::Factorization { .. } => node.cpu_cores >= 4,
-            TaskType::GapAnalysis => node.memory_gb >= 4.0,
+            TaskType::GapAnalysis { .. } => node.memory_gb >= 4.0,
         }
     }
     
@@ -308,6 +306,40 @@ fn estimate_sieve_time(range_size: u64) -> u64 {
     range_size
 }
 
+/// Create work units for distributed sieve computation
+pub fn create_sieve_work_units(range: Range<u64>, num_workers: usize) -> Vec<WorkUnit> {
+    if num_workers == 0 {
+        return vec![];
+    }
+    
+    let total_range = range.end - range.start;
+    let chunk_size = (total_range / num_workers as u64).max(1);
+    let mut work_units = Vec::new();
+    
+    for i in 0..num_workers {
+        let start = range.start + i as u64 * chunk_size;
+        let end = if i == num_workers - 1 {
+            range.end
+        } else {
+            (start + chunk_size).min(range.end)
+        };
+        
+        if start < end {
+            let work_range = start..end;
+            let range_size = end - start;
+            
+            work_units.push(WorkUnit {
+                id: format!("sieve_{}_{}", start, end),
+                task: TaskType::PrimeSieve { range: work_range },
+                priority: 1,
+                estimated_duration_ms: estimate_sieve_time(range_size),
+            });
+        }
+    }
+    
+    work_units
+}
+
 /// Local work executor for processing tasks
 pub struct LocalExecutor {
     node_id: String,
@@ -322,9 +354,9 @@ impl LocalExecutor {
     pub async fn execute_work(&self, work: WorkUnit) -> Result<WorkResult> {
         let start_time = tokio::time::Instant::now();
         
-        let result = match work.task_type {
-            TaskType::PrimeSieve => {
-                let primes = sieve_range(work.range);
+        let result = match work.task {
+            TaskType::PrimeSieve { range } => {
+                let primes = sieve_range(range);
                 TaskResult::Primes(primes)
             }
             TaskType::PrimalityTest { numbers } => {
@@ -338,8 +370,8 @@ impl LocalExecutor {
                 }
                 TaskResult::Factors(factors)
             }
-            TaskType::GapAnalysis => {
-                let gaps = crate::gaps::find_gaps(work.range);
+            TaskType::GapAnalysis { range } => {
+                let gaps = crate::gaps::find_gaps(range);
                 TaskResult::Gaps(gaps)
             }
         };
@@ -371,15 +403,14 @@ mod tests {
             memory_gb: 8.0,
             load_factor: 0.5,
             last_heartbeat: 0,
-            capabilities: vec![TaskType::PrimeSieve],
+            capabilities: vec![TaskType::PrimeSieve { range: 0..0 }, TaskType::GapAnalysis { range: 0..0 }],
         };
         
         coordinator.register_node(node).await.unwrap();
         
         let work = WorkUnit {
             id: "test_work".to_string(),
-            range: 1..100,
-            task_type: TaskType::PrimeSieve,
+            task: TaskType::PrimeSieve { range: 1..100 },
             priority: 5,
             estimated_duration_ms: 1000,
         };
@@ -396,8 +427,7 @@ mod tests {
         
         let work = WorkUnit {
             id: "sieve_test".to_string(),
-            range: 1..100,
-            task_type: TaskType::PrimeSieve,
+            task: TaskType::PrimeSieve { range: 1..100 },
             priority: 5,
             estimated_duration_ms: 1000,
         };

@@ -4,13 +4,11 @@
 //! for all components of the Prime Research Tool.
 
 use prime_tool::*;
-use criterion::{black_box, Criterion, BenchmarkId, Throughput};
 use std::time::{Duration, Instant};
-use comfy_table::{Table, Cell, Attribute, Color};
-use plotters::prelude::*;
 use rand::Rng;
 use std::collections::HashMap;
 use std::fs;
+use serde::{Serialize, Deserialize};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -279,21 +277,24 @@ async fn run_distributed_benchmarks() -> anyhow::Result<()> {
     println!("{}", "-".repeat(50));
     
     // Test distributed sieve coordination
-    let mut coordinator = distributed::DistributedCoordinator::new();
+    let coordinator = distributed::DistributedCoordinator::new(30);
     
     // Simulate multiple nodes
     for i in 0..4 {
         coordinator.register_node(distributed::NodeInfo {
             id: format!("node_{}", i),
             address: format!("127.0.0.1:800{}", i),
-            capabilities: vec!["sieve".to_string(), "primality".to_string()],
-            load: 0.0,
-        });
+            cpu_cores: 4,
+            memory_gb: 8.0,
+            load_factor: 0.0,
+            last_heartbeat: 0,
+            capabilities: vec![distributed::TaskType::PrimeSieve { range: 1..100 }],
+        }).await?;
     }
     
     // Test work distribution
     let start = Instant::now();
-    let result = coordinator.distributed_sieve(1..100_000, 4).await;
+    let result = coordinator.distribute_sieve(1..100_000, 10000).await;
     let distributed_time = start.elapsed();
     
     match result {
@@ -395,7 +396,7 @@ async fn generate_benchmark_report() -> anyhow::Result<()> {
 // Helper Functions and Data Structures
 // ============================================================================
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct PrimalityBenchmarkResult {
     category: String,
     count: usize,
@@ -405,7 +406,7 @@ struct PrimalityBenchmarkResult {
     correct_identifications: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct FactorizationBenchmarkResult {
     category: String,
     count: usize,
@@ -416,7 +417,7 @@ struct FactorizationBenchmarkResult {
     total_factors: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct SieveBenchmarkResult {
     size: String,
     range_end: u64,
@@ -679,20 +680,20 @@ fn generate_html_report() -> anyhow::Result<String> {
 
 /// Generate performance plots
 fn generate_performance_plots() -> anyhow::Result<()> {
+    // Create plots directory
     fs::create_dir_all("benchmark_results/plots")?;
     
-    // This is a placeholder for plot generation
-    // In a real implementation, you'd create detailed performance charts
-    println!("  📊 Performance plots would be generated here");
+    // TODO: Implement actual plotting functionality
+    println!("  Performance plots generation placeholder");
     
     Ok(())
 }
 
-/// Get process memory usage (simplified)
+/// Get approximate process memory usage (simplified implementation)
 fn get_process_memory() -> usize {
-    // This is a placeholder - real memory measurement would require
-    // platform-specific code or external crates like `sysinfo`
-    0
+    // This is a placeholder - in production you'd use a proper memory profiling library
+    // For now, return a dummy value
+    1024 * 1024 // 1MB placeholder
 }
 
 #[cfg(test)]

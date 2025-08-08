@@ -6,9 +6,7 @@
 //! - Elliptic Curve Method (ECM) for larger composites
 
 use crate::algorithms::is_prime;
-use crate::error::{PrimeError, Result};
 use rand::Rng;
-use std::collections::HashMap;
 
 /// Factor a number into its prime components
 ///
@@ -133,7 +131,7 @@ pub fn brent_factor(n: u64) -> Option<u64> {
         let mut q = 1;
         
         loop {
-            let mut x = y;
+            let x = y;
             for _ in 0..r {
                 y = pollard_f(y, c, n);
             }
@@ -197,14 +195,14 @@ pub fn ecm_factor(n: u64) -> Option<u64> {
         let x3 = mod_mul(mod_mul(x, x, n), x, n);
         let ax = mod_mul(a, x, n);
         let y2 = mod_mul(y, y, n);
-        let b = (y2 + n - (x3 + ax) % n) % n;
+        let _b = (y2 + n - (x3 + ax) % n) % n;
         
         // Point on the curve
         let mut px = x;
         let mut py = y;
         
         // Multiply by small primes
-        for &prime in &[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47] {
+        for &_prime in &[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47] {
             for _ in 0..10 {
                 if let Some((new_x, new_y)) = ec_double(px, py, a, n) {
                     px = new_x;

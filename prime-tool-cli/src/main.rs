@@ -198,7 +198,7 @@ async fn main() -> anyhow::Result<()> {
                 is_prime: result,
                 execution_time_ms: start_time.elapsed().as_millis() as u64,
             };
-            print_output(&output, &cli.format, cli.output.as_ref())?;
+            print_output(&output, &cli.format, cli.output.as_ref().map(|v| &**v))?;
         }
         
         Commands::Factor { number } => {
@@ -208,11 +208,13 @@ async fn main() -> anyhow::Result<()> {
                 factors,
                 execution_time_ms: start_time.elapsed().as_millis() as u64,
             };
-            print_output(&output, &cli.format, cli.output.as_ref())?;
+            print_output(&output, &cli.format, cli.output.as_ref().map(|v| &**v))?;
         }
         
         Commands::Sieve { range, parallel, chunk_size, nodes } => {
             let range = parse_range(&range)?;
+            let range_start = range.start;
+            let range_end = range.end;
             
             let primes = if !nodes.is_empty() {
                 // Distributed sieving
@@ -227,19 +229,19 @@ async fn main() -> anyhow::Result<()> {
             };
             
             let output = SieveOutput {
-                range_start: range.start,
-                range_end: range.end,
+                range_start,
+                range_end,
                 primes,
                 execution_time_ms: start_time.elapsed().as_millis() as u64,
             };
-            print_output(&output, &cli.format, cli.output.as_ref())?;
+            print_output(&output, &cli.format, cli.output.as_ref().map(|v| &**v))?;
         }
         
         Commands::Gaps { range, twins, cousins, sexy, plot } => {
             let range = parse_range(&range)?;
             let stats = gaps::analyze_gaps(range.clone());
             
-            let mut output = GapAnalysisOutput {
+            let output = GapAnalysisOutput {
                 range_start: range.start,
                 range_end: range.end,
                 statistics: stats,
@@ -254,7 +256,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("Gap histogram saved to: {}", plot_path.display());
             }
             
-            print_output(&output, &cli.format, cli.output.as_ref())?;
+            print_output(&output, &cli.format, cli.output.as_ref().map(|v| &**v))?;
         }
         
         Commands::Plot { range, output_dir, plot_type } => {

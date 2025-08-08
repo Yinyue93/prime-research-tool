@@ -30,3 +30,15 @@ harness = false
 [[bench]]
 name = "factorization_bench"
 harness = false
+
+[[bench]]
+name = "sieve_bench"
+harness = false
+
+[[bench]]
+name = "gaps_bench"
+harness = false
+
+[[bench]]
+name = "distributed_bench"
+harness = false

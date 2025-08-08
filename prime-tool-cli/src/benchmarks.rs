@@ -132,7 +132,7 @@ pub async fn benchmark_factorization(max_n: u64, iterations: usize) -> anyhow::R
 }
 
 /// Benchmark sieving algorithms
-pub async fn benchmark_sieve(max_n: u64, iterations: usize) -> anyhow::Result<()> {
+pub async fn benchmark_sieve(max_n: u64, _iterations: usize) -> anyhow::Result<()> {
     println!("🔢 Sieve Benchmarks");
     println!("{}", "-".repeat(40));
     
@@ -355,41 +355,6 @@ fn format_number(n: u64) -> String {
     }
     
     result.chars().rev().collect()
-}
-
-/// Memory usage benchmark
-pub async fn benchmark_memory_usage(max_n: u64) -> anyhow::Result<()> {
-    println!("💾 Memory Usage Analysis");
-    println!("{}", "-".repeat(40));
-    
-    // This is a simplified memory analysis
-    // In a real implementation, you'd use tools like valgrind or custom allocators
-    
-    let ranges = vec![10_000, 100_000, 1_000_000, max_n.min(10_000_000)];
-    
-    for &range_end in &ranges {
-        println!("\nSieving range 1..{}", format_number(range_end));
-        
-        let start_memory = get_memory_usage();
-        let primes = sieve_range(1..range_end);
-        let end_memory = get_memory_usage();
-        
-        let memory_used = end_memory.saturating_sub(start_memory);
-        let memory_per_prime = memory_used as f64 / primes.len() as f64;
-        
-        println!("  Primes found: {}", format_number(primes.len() as u64));
-        println!("  Memory used: ~{} KB", memory_used / 1024);
-        println!("  Memory per prime: ~{:.1} bytes", memory_per_prime);
-    }
-    
-    Ok(())
-}
-
-/// Get approximate memory usage (simplified)
-fn get_memory_usage() -> usize {
-    // This is a placeholder - real memory measurement would require
-    // platform-specific code or external tools
-    0
 }
 
 #[cfg(test)]

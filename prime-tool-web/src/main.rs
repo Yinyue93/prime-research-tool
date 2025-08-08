@@ -6,7 +6,7 @@
 use axum::{
     extract::{Query, Path},
     http::StatusCode,
-    response::Json,
+    response::{Json, Result as AxumResult},
     routing::{get, post},
     Router,
 };
@@ -22,6 +22,8 @@ use tower_http::{
 };
 use tracing::{info, warn};
 use tracing_subscriber;
+use chrono;
+use rand::Rng;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -109,7 +111,7 @@ struct BenchmarkRequest {
     benchmark_type: String, // "primality", "factorization", "sieve", "gaps"
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct ApiResponse<T> {
     success: bool,
     data: Option<T>,
@@ -117,21 +119,21 @@ struct ApiResponse<T> {
     execution_time_ms: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct PrimalityResponse {
     number: u64,
     is_prime: bool,
     algorithm_used: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct FactorizationResponse {
     number: u64,
     factors: Vec<u64>,
     is_prime: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct SieveResponse {
     range_start: u64,
     range_end: u64,
@@ -270,7 +272,7 @@ async fn api_docs() -> &'static str {
 }
 
 /// Check if a single number is prime
-async fn check_prime(Path(number): Path<u64>) -> Result<Json<ApiResponse<PrimalityResponse>>, StatusCode> {
+async fn check_prime(Path(number): Path<u64>) -> AxumResult<Json<ApiResponse<PrimalityResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     match tokio::task::spawn_blocking(move || {
@@ -306,7 +308,7 @@ async fn check_prime(Path(number): Path<u64>) -> Result<Json<ApiResponse<Primali
 /// Check multiple numbers for primality
 async fn check_prime_batch(
     Json(request): Json<BatchRequest>,
-) -> Result<Json<ApiResponse<Vec<PrimalityResponse>>>, StatusCode> {
+) -> AxumResult<Json<ApiResponse<Vec<PrimalityResponse>>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     if request.numbers.len() > 1000 {
@@ -351,7 +353,7 @@ async fn check_prime_batch(
 }
 
 /// Factor a single number
-async fn factor_number(Path(number): Path<u64>) -> Result<Json<ApiResponse<FactorizationResponse>>, StatusCode> {
+async fn factor_number(Path(number): Path<u64>) -> AxumResult<Json<ApiResponse<FactorizationResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     match tokio::task::spawn_blocking(move || {
@@ -383,7 +385,7 @@ async fn factor_number(Path(number): Path<u64>) -> Result<Json<ApiResponse<Facto
 /// Factor multiple numbers
 async fn factor_batch(
     Json(request): Json<BatchRequest>,
-) -> Result<Json<ApiResponse<Vec<FactorizationResponse>>>, StatusCode> {
+) -> AxumResult<Json<ApiResponse<Vec<FactorizationResponse>>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     if request.numbers.len() > 100 {
@@ -426,7 +428,7 @@ async fn factor_batch(
 /// Sieve primes in a range (sequential)
 async fn sieve_range_handler(
     Query(params): Query<RangeQuery>,
-) -> Result<Json<ApiResponse<SieveResponse>>, StatusCode> {
+) -> AxumResult<Json<ApiResponse<SieveResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     if params.end - params.start > 10_000_000 {
@@ -467,7 +469,7 @@ async fn sieve_range_handler(
 /// Sieve primes in a range (parallel)
 async fn sieve_parallel_handler(
     Query(params): Query<RangeQuery>,
-) -> Result<Json<ApiResponse<SieveResponse>>, StatusCode> {
+) -> AxumResult<Json<ApiResponse<SieveResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     if params.end - params.start > 10_000_000 {
@@ -510,7 +512,7 @@ async fn sieve_parallel_handler(
 /// Analyze prime gaps in a range
 async fn gap_analysis_handler(
     Query(params): Query<RangeQuery>,
-) -> Result<Json<ApiResponse<GapAnalysisResponse>>, StatusCode> {
+) -> AxumResult<Json<ApiResponse<GapAnalysisResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     if params.end - params.start > 1_000_000 {
@@ -524,21 +526,14 @@ async fn gap_analysis_handler(
     
     match tokio::task::spawn_blocking(move || {
         let stats = gaps::analyze_gaps(params.start..params.end);
-        let gaps = gaps::find_gaps(params.start..params.end);
-        
-        // Create gap distribution
-        let mut gap_distribution = HashMap::new();
-        for gap_info in &gaps {
-            *gap_distribution.entry(gap_info.gap).or_insert(0) += 1;
-        }
         
         GapAnalysisResponse {
             range_start: params.start,
             range_end: params.end,
             total_gaps: stats.total_gaps,
-            max_gap: stats.max_gap,
+            max_gap: stats.max_gap as u64,
             average_gap: stats.average_gap,
-            gap_distribution,
+            gap_distribution: stats.gap_histogram.into_iter().map(|(k, v)| (k as u64, v)).collect(),
         }
     }).await {
         Ok(result) => {
@@ -560,13 +555,13 @@ async fn gap_analysis_handler(
 /// Find twin primes in a range
 async fn twin_primes_handler(
     Query(params): Query<RangeQuery>,
-) -> Result<Json<ApiResponse<TwinPrimesResponse>>, StatusCode> {
+) -> AxumResult<Json<ApiResponse<TwinPrimesResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     match tokio::task::spawn_blocking(move || {
         let twins = gaps::find_twin_primes(params.start..params.end);
         let twin_pairs: Vec<(u64, u64)> = twins.into_iter()
-            .map(|tp| (tp.first, tp.second))
+            .map(|tp| (tp.smaller, tp.larger))
             .collect();
         
         TwinPrimesResponse {
@@ -595,13 +590,13 @@ async fn twin_primes_handler(
 /// Find cousin primes in a range
 async fn cousin_primes_handler(
     Query(params): Query<RangeQuery>,
-) -> Result<Json<ApiResponse<TwinPrimesResponse>>, StatusCode> {
+) -> AxumResult<Json<ApiResponse<TwinPrimesResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     match tokio::task::spawn_blocking(move || {
         let cousins = gaps::find_cousin_primes(params.start..params.end);
         let cousin_pairs: Vec<(u64, u64)> = cousins.into_iter()
-            .map(|tp| (tp.first, tp.second))
+            .map(|tp| (tp.smaller, tp.larger))
             .collect();
         
         TwinPrimesResponse {
@@ -630,13 +625,13 @@ async fn cousin_primes_handler(
 /// Find sexy primes in a range
 async fn sexy_primes_handler(
     Query(params): Query<RangeQuery>,
-) -> Result<Json<ApiResponse<TwinPrimesResponse>>, StatusCode> {
+) -> AxumResult<Json<ApiResponse<TwinPrimesResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     match tokio::task::spawn_blocking(move || {
         let sexy = gaps::find_sexy_primes(params.start..params.end);
         let sexy_pairs: Vec<(u64, u64)> = sexy.into_iter()
-            .map(|tp| (tp.first, tp.second))
+            .map(|tp| (tp.smaller, tp.larger))
             .collect();
         
         TwinPrimesResponse {
@@ -665,7 +660,7 @@ async fn sexy_primes_handler(
 /// Get comprehensive range statistics
 async fn range_statistics(
     Query(params): Query<RangeQuery>,
-) -> Result<Json<ApiResponse<RangeStatsResponse>>, StatusCode> {
+) -> AxumResult<Json<ApiResponse<RangeStatsResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     if params.end - params.start > 1_000_000 {
@@ -683,7 +678,7 @@ async fn range_statistics(
         let twins = gaps::find_twin_primes(params.start..params.end);
         
         let largest_prime = primes.last().copied().unwrap_or(0);
-        let largest_gap = gaps.iter().map(|g| g.gap).max().unwrap_or(0);
+        let largest_gap = gaps.iter().map(|g| g.gap_size).max().unwrap_or(0);
         let range_size = params.end - params.start;
         let density = primes.len() as f64 / range_size as f64;
         
@@ -693,7 +688,7 @@ async fn range_statistics(
             prime_count: primes.len(),
             density,
             largest_prime,
-            largest_gap,
+            largest_gap: largest_gap as u64,
             twin_prime_count: twins.len(),
         }
     }).await {
@@ -716,7 +711,7 @@ async fn range_statistics(
 /// Run performance benchmarks
 async fn run_benchmark(
     Json(request): Json<BenchmarkRequest>,
-) -> Result<Json<ApiResponse<BenchmarkResponse>>, StatusCode> {
+) -> AxumResult<Json<ApiResponse<BenchmarkResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
     
     if request.iterations > 10_000 {
@@ -736,7 +731,7 @@ async fn run_benchmark(
                 // Simple primality benchmark
                 let mut rng = rand::thread_rng();
                 for _ in 0..request.iterations {
-                    let n = rand::Rng::gen_range(&mut rng, 2..=request.max_n);
+                    let n = rng.gen_range(2..=request.max_n);
                     is_prime(n);
                 }
             }
@@ -744,7 +739,7 @@ async fn run_benchmark(
                 // Simple factorization benchmark
                 let mut rng = rand::thread_rng();
                 for _ in 0..request.iterations {
-                    let n = rand::Rng::gen_range(&mut rng, 4..=request.max_n);
+                    let n = rng.gen_range(4..=request.max_n);
                     factor(n);
                 }
             }

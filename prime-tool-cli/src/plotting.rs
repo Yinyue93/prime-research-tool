@@ -3,7 +3,6 @@
 use plotters::prelude::*;
 use prime_tool::gaps::GapStatistics;
 use prime_tool::sieve_range;
-use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -93,12 +92,12 @@ pub fn generate_prime_count_plot<P: AsRef<Path>>(
         .draw_series(LineSeries::new(approximation_points, &RED.mix(0.7)))?;
     
     chart
-        .draw_series(std::iter::once(Circle::new((0.0, 0.0), 0)))?  // Dummy for legend
+        .draw_series(std::iter::once(Circle::new((0.0, 0.0), 0, BLUE.filled())))?  // Dummy for legend
         .label("π(x)")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], &BLUE));
     
     chart
-        .draw_series(std::iter::once(Circle::new((0.0, 0.0), 0)))?  // Dummy for legend
+        .draw_series(std::iter::once(Circle::new((0.0, 0.0), 0, RED.filled())))?  // Dummy for legend
         .label("x/ln(x) approximation")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], &RED));
     
@@ -254,12 +253,12 @@ pub fn generate_gap_progression_plot<P: AsRef<Path>>(
     )?;
     
     chart
-        .draw_series(std::iter::once(Circle::new((0, 0), 0)))?  // Dummy for legend
+        .draw_series(std::iter::once(Circle::new((0, 0), 0, BLUE.filled())))?  // Dummy for legend
         .label("Gap sizes")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], &BLUE));
     
     chart
-        .draw_series(std::iter::once(Circle::new((0, 0), 0)))?  // Dummy for legend
+        .draw_series(std::iter::once(Circle::new((0, 0), 0, RED.filled())))?  // Dummy for legend
         .label("Maximal gaps")
         .legend(|(x, y)| Circle::new((x + 5, y), 3, RED.filled()));
     
@@ -269,114 +268,7 @@ pub fn generate_gap_progression_plot<P: AsRef<Path>>(
     Ok(path.to_path_buf())
 }
 
-/// Generate twin prime distribution plot
-pub fn generate_twin_prime_plot<P: AsRef<Path>>(
-    range: Range<u64>,
-    output_path: P,
-) -> anyhow::Result<PathBuf> {
-    let path = output_path.as_ref();
-    let root = SVGBackend::new(path, (800, 600)).into_drawing_area();
-    root.fill(&WHITE)?;
-    
-    let twin_primes = prime_tool::gaps::find_twin_primes(range.clone());
-    
-    // Create cumulative count of twin primes
-    let mut cumulative_data = Vec::new();
-    let mut count = 0;
-    let step = ((range.end - range.start) / 1000).max(1);
-    
-    for x in (range.start..range.end).step_by(step as usize) {
-        // Count twin primes up to x
-        while count < twin_primes.len() && twin_primes[count].larger <= x {
-            count += 1;
-        }
-        cumulative_data.push((x as f64, count as f64));
-    }
-    
-    let max_count = twin_primes.len() as f64;
-    
-    let mut chart = ChartBuilder::on(&root)
-        .caption(&format!("Twin Prime Count ({}..{})", range.start, range.end), ("Arial", 30))
-        .margin(10)
-        .x_label_area_size(50)
-        .y_label_area_size(60)
-        .build_cartesian_2d(range.start as f64..range.end as f64, 0f64..max_count + 1.0)?;
-    
-    chart
-        .configure_mesh()
-        .x_desc("x")
-        .y_desc("Twin Prime Count")
-        .draw()?;
-    
-    chart.draw_series(LineSeries::new(cumulative_data, &MAGENTA))?;
-    
-    // Mark individual twin primes
-    chart.draw_series(
-        twin_primes
-            .iter()
-            .map(|tp| Circle::new((tp.smaller as f64, 0.0), 2, RED.filled()))
-    )?;
-    
-    root.present()?;
-    Ok(path.to_path_buf())
-}
 
-/// Generate comparative algorithm performance plot
-pub fn generate_performance_plot<P: AsRef<Path>>(
-    performance_data: &HashMap<String, Vec<(u64, f64)>>,
-    output_path: P,
-) -> anyhow::Result<PathBuf> {
-    let path = output_path.as_ref();
-    let root = SVGBackend::new(path, (800, 600)).into_drawing_area();
-    root.fill(&WHITE)?;
-    
-    if performance_data.is_empty() {
-        return Err(anyhow::anyhow!("No performance data provided"));
-    }
-    
-    let max_x = performance_data
-        .values()
-        .flat_map(|data| data.iter().map(|(x, _)| *x))
-        .max()
-        .unwrap_or(1000) as f64;
-    
-    let max_y = performance_data
-        .values()
-        .flat_map(|data| data.iter().map(|(_, y)| *y))
-        .fold(0.0f64, |a, b| a.max(b));
-    
-    let mut chart = ChartBuilder::on(&root)
-        .caption("Algorithm Performance Comparison", ("Arial", 30))
-        .margin(10)
-        .x_label_area_size(50)
-        .y_label_area_size(60)
-        .build_cartesian_2d(0f64..max_x, 0f64..max_y * 1.1)?;
-    
-    chart
-        .configure_mesh()
-        .x_desc("Input Size")
-        .y_desc("Time (ms)")
-        .draw()?;
-    
-    let colors = [&BLUE, &RED, &GREEN, &MAGENTA, &CYAN];
-    
-    for (i, (algorithm, data)) in performance_data.iter().enumerate() {
-        let color = colors[i % colors.len()];
-        
-        chart
-            .draw_series(LineSeries::new(
-                data.iter().map(|(x, y)| (*x as f64, *y)),
-                color,
-            ))?
-            .label(algorithm)
-            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], color));
-    }
-    
-    chart.configure_series_labels().draw()?;
-    
-    root.present()?;
-    Ok(path.to_path_buf())
-}
 
 #[cfg(test)]
 mod tests {

@@ -49,6 +49,7 @@ comfy-table = "7.1"
 
 # Plotting for benchmark results
 plotters = "0.3"
+chrono = "0.4.41"
 
 [dev-dependencies]
 tokio-test = "0.4"

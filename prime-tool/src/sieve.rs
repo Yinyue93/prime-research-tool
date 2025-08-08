@@ -4,10 +4,9 @@
 //! with optimizations for parallel processing across multiple cores and network nodes.
 
 use crate::algorithms::is_prime;
-use crate::error::{PrimeError, Result};
+use crate::error::Result;
 use rayon::prelude::*;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 /// Find all primes in a given range
@@ -35,7 +34,7 @@ pub fn sieve_range(range: Range<u64>) -> Vec<u64> {
     }
     
     // Use segmented sieve for larger ranges
-    segmented_sieve(start, end)
+    segmented_sieve_impl(start, end)
 }
 
 /// Parallel prime sieving using Rayon
@@ -69,8 +68,215 @@ pub fn sieve_parallel(range: Range<u64>, chunk_size: usize) -> Vec<u64> {
     all_primes
 }
 
+/// Parallel sieve with default chunk size
+pub fn parallel_sieve(range: Range<u64>) -> Vec<u64> {
+    sieve_parallel(range, 10000)
+}
+
+/// Segmented sieve with Range input
+pub fn segmented_sieve(range: Range<u64>) -> Vec<u64> {
+    segmented_sieve_impl(range.start, range.end)
+}
+
+/// Segmented sieve with custom segment size
+pub fn segmented_sieve_with_size(range: Range<u64>, segment_size: u64) -> Vec<u64> {
+    if range.start >= range.end {
+        return vec![];
+    }
+    
+    let start = range.start.max(2);
+    let end = range.end;
+    
+    // First, find all primes up to sqrt(end)
+    let limit = ((end as f64).sqrt() as u64) + 1;
+    let base_primes = simple_sieve(limit);
+    
+    let mut primes = Vec::new();
+    
+    // Add small primes that are in range
+    for &p in &base_primes {
+        if p >= start && p < end {
+            primes.push(p);
+        }
+    }
+    
+    // Process in custom-sized segments
+    let mut current = start.max(limit);
+    
+    while current < end {
+        let segment_end = (current + segment_size).min(end);
+        let segment_primes = sieve_segment(current, segment_end, &base_primes);
+        primes.extend(segment_primes);
+        current = segment_end;
+    }
+    
+    primes.sort_unstable();
+    primes
+}
+
+/// Count primes in range without storing them
+pub fn count_primes_in_range(range: Range<u64>) -> usize {
+    if range.start >= range.end {
+        return 0;
+    }
+    
+    let start = range.start.max(2);
+    let end = range.end;
+    
+    if end - start < 1000 {
+        return (start..end).filter(|&n| is_prime(n)).count();
+    }
+    
+    // Use segmented sieve but only count
+    let limit = ((end as f64).sqrt() as u64) + 1;
+    let base_primes = simple_sieve(limit);
+    
+    let mut count = 0;
+    
+    // Count small primes that are in range
+    for &p in &base_primes {
+        if p >= start && p < end {
+            count += 1;
+        }
+    }
+    
+    // Process in segments and count
+    const SEGMENT_SIZE: u64 = 1_000_000;
+    let mut current = start.max(limit);
+    
+    while current < end {
+        let segment_end = (current + SEGMENT_SIZE).min(end);
+        let segment_primes = sieve_segment(current, segment_end, &base_primes);
+        count += segment_primes.len();
+        current = segment_end;
+    }
+    
+    count
+}
+
+/// Basic sieve implementation
+pub fn basic_sieve(range: Range<u64>) -> Vec<u64> {
+    if range.start >= range.end {
+        return vec![];
+    }
+    
+    let start = range.start.max(2);
+    let end = range.end;
+    
+    if end <= start {
+        return vec![];
+    }
+    
+    let size = (end - start) as usize;
+    let mut is_prime = vec![true; size];
+    
+    for i in 2..((end as f64).sqrt() as u64 + 1) {
+        if i >= start {
+            let idx = (i - start) as usize;
+            if idx < is_prime.len() && !is_prime[idx] {
+                continue;
+            }
+        }
+        
+        let mut multiple = ((start + i - 1) / i) * i;
+        if multiple < i * i {
+            multiple = i * i;
+        }
+        
+        while multiple < end {
+            if multiple >= start {
+                is_prime[(multiple - start) as usize] = false;
+            }
+            multiple += i;
+        }
+    }
+    
+    (start..end)
+        .enumerate()
+        .filter_map(|(i, n)| {
+            if is_prime[i] {
+                Some(n)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Optimized sieve (skips even numbers)
+pub fn optimized_sieve(range: Range<u64>) -> Vec<u64> {
+    if range.start >= range.end {
+        return vec![];
+    }
+    
+    let start = range.start.max(2);
+    let end = range.end;
+    
+    let mut primes = Vec::new();
+    
+    // Add 2 if in range
+    if start <= 2 && 2 < end {
+        primes.push(2);
+    }
+    
+    // Only check odd numbers
+    let odd_start = if start % 2 == 0 { start + 1 } else { start };
+    
+    for n in (odd_start..end).step_by(2) {
+        if is_prime(n) {
+            primes.push(n);
+        }
+    }
+    
+    primes
+}
+
+/// Wheel sieve using 2,3 wheel
+pub fn wheel_sieve(range: Range<u64>) -> Vec<u64> {
+    let wheel = WheelSieve::new(&[2, 3]);
+    let candidates = wheel.candidates(range.start, range.end);
+    candidates.into_iter().filter(|&n| is_prime(n)).collect()
+}
+
+/// Wheel factorization sieve
+pub fn wheel_factorization_sieve(range: Range<u64>) -> Vec<u64> {
+    let wheel = WheelSieve::new(&[2, 3, 5]);
+    let candidates = wheel.candidates(range.start, range.end);
+    candidates.into_iter().filter(|&n| is_prime(n)).collect()
+}
+
+/// BitVec-based sieve
+pub fn bitvec_sieve(range: Range<u64>) -> Vec<u64> {
+    // For now, use basic sieve (could be optimized with actual bitvec crate)
+    basic_sieve(range)
+}
+
+/// Vec<bool>-based sieve
+pub fn vec_bool_sieve(range: Range<u64>) -> Vec<u64> {
+    basic_sieve(range)
+}
+
+/// Compressed sieve (odd numbers only)
+pub fn compressed_sieve(range: Range<u64>) -> Vec<u64> {
+    optimized_sieve(range)
+}
+
+/// SIMD-optimized sieve (x86_64 only)
+#[cfg(target_arch = "x86_64")]
+pub fn simd_sieve(range: Range<u64>) -> Vec<u64> {
+    // For now, fallback to basic sieve
+    basic_sieve(range)
+}
+
+/// SIMD-optimized sieve fallback for non-x86_64
+#[cfg(not(target_arch = "x86_64"))]
+pub fn simd_sieve(range: Range<u64>) -> Vec<u64> {
+    // Fallback to basic sieve on non-x86_64 architectures
+    basic_sieve(range)
+}
+
 /// Segmented Sieve of Eratosthenes
-fn segmented_sieve(start: u64, end: u64) -> Vec<u64> {
+fn segmented_sieve_impl(start: u64, end: u64) -> Vec<u64> {
     if start >= end {
         return vec![];
     }
@@ -322,7 +528,7 @@ mod tests {
     
     #[test]
     fn test_segmented_sieve() {
-        let primes = segmented_sieve(100, 200);
+        let primes = segmented_sieve(100..200);
         assert!(primes.contains(&101));
         assert!(primes.contains(&199));
         assert!(!primes.contains(&100));

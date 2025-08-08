@@ -3,10 +3,6 @@
 //! This module implements deterministic primality tests up to 2^64 using
 //! adaptive Miller-Rabin with Baillie-PSW fallback.
 
-use crate::error::{PrimeError, Result};
-use num_bigint::BigUint;
-use num_traits::{Zero, One, ToPrimitive};
-use rand::Rng;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
 
@@ -179,7 +175,7 @@ fn lucas_sequence_test(n: u64, p: i64, q: i64) -> bool {
     
     // Simplified Lucas sequence computation
     // This is a basic implementation - a full implementation would be more complex
-    let (u, v) = lucas_sequence(delta, p, q, n);
+    let (u, _v) = lucas_sequence(delta, p, q, n);
     
     u == 0
 }
