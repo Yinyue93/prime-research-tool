@@ -1,50 +1,47 @@
 //! Prime Research Tool Web Service
-//! 
+//!
 //! A REST API service built with Axum that exposes prime research functionality
 //! over HTTP endpoints.
 
 use axum::{
-    extract::{Query, Path},
+    extract::{Path, Query},
     http::StatusCode,
     response::{Json, Result as AxumResult},
     routing::{get, post},
     Router,
 };
+use chrono;
 use prime_tool::*;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_http::{
-    cors::CorsLayer,
-    trace::TraceLayer,
-};
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{info, warn};
 use tracing_subscriber;
-use chrono;
-use rand::Rng;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
-    
+
     info!("Starting Prime Research Tool Web Service");
-    
+
     // Build the application router
     let app = create_app();
-    
+
     // Bind to address
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     let listener = TcpListener::bind(addr).await?;
-    
+
     info!("Server listening on http://{}", addr);
     info!("API Documentation available at http://{}/docs", addr);
-    
+
     // Start the server
     axum::serve(listener, app).await?;
-    
+
     Ok(())
 }
 
@@ -53,37 +50,30 @@ fn create_app() -> Router {
     Router::new()
         // Health check
         .route("/health", get(health_check))
-        
         // API documentation
         .route("/docs", get(api_docs))
-        
         // Primality testing
         .route("/prime/:number", get(check_prime))
         .route("/prime", post(check_prime_batch))
-        
         // Factorization
         .route("/factor/:number", get(factor_number))
         .route("/factor", post(factor_batch))
-        
         // Sieving
         .route("/sieve", get(sieve_range_handler))
         .route("/sieve/parallel", get(sieve_parallel_handler))
-        
         // Gap analysis
         .route("/gaps", get(gap_analysis_handler))
         .route("/gaps/twins", get(twin_primes_handler))
         .route("/gaps/cousins", get(cousin_primes_handler))
         .route("/gaps/sexy", get(sexy_primes_handler))
-        
         // Statistics and analysis
         .route("/stats/range", get(range_statistics))
         .route("/benchmark", post(run_benchmark))
-        
         // Add middleware
         .layer(
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())
-                .layer(CorsLayer::permissive())
+                .layer(CorsLayer::permissive()),
         )
 }
 
@@ -272,9 +262,11 @@ async fn api_docs() -> &'static str {
 }
 
 /// Check if a single number is prime
-async fn check_prime(Path(number): Path<u64>) -> AxumResult<Json<ApiResponse<PrimalityResponse>>, StatusCode> {
+async fn check_prime(
+    Path(number): Path<u64>,
+) -> AxumResult<Json<ApiResponse<PrimalityResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     match tokio::task::spawn_blocking(move || {
         let is_prime_result = is_prime(number);
         let algorithm = if number <= u64::MAX {
@@ -282,13 +274,15 @@ async fn check_prime(Path(number): Path<u64>) -> AxumResult<Json<ApiResponse<Pri
         } else {
             "Baillie-PSW"
         };
-        
+
         PrimalityResponse {
             number,
             is_prime: is_prime_result,
             algorithm_used: algorithm.to_string(),
         }
-    }).await {
+    })
+    .await
+    {
         Ok(result) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -310,7 +304,7 @@ async fn check_prime_batch(
     Json(request): Json<BatchRequest>,
 ) -> AxumResult<Json<ApiResponse<Vec<PrimalityResponse>>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     if request.numbers.len() > 1000 {
         return Ok(Json(ApiResponse {
             success: false,
@@ -319,23 +313,29 @@ async fn check_prime_batch(
             execution_time_ms: 0,
         }));
     }
-    
+
     match tokio::task::spawn_blocking(move || {
-        request.numbers.into_iter().map(|number| {
-            let is_prime_result = is_prime(number);
-            let algorithm = if number <= u64::MAX {
-                "Miller-Rabin"
-            } else {
-                "Baillie-PSW"
-            };
-            
-            PrimalityResponse {
-                number,
-                is_prime: is_prime_result,
-                algorithm_used: algorithm.to_string(),
-            }
-        }).collect::<Vec<_>>()
-    }).await {
+        request
+            .numbers
+            .into_iter()
+            .map(|number| {
+                let is_prime_result = is_prime(number);
+                let algorithm = if number <= u64::MAX {
+                    "Miller-Rabin"
+                } else {
+                    "Baillie-PSW"
+                };
+
+                PrimalityResponse {
+                    number,
+                    is_prime: is_prime_result,
+                    algorithm_used: algorithm.to_string(),
+                }
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    {
         Ok(results) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -353,19 +353,23 @@ async fn check_prime_batch(
 }
 
 /// Factor a single number
-async fn factor_number(Path(number): Path<u64>) -> AxumResult<Json<ApiResponse<FactorizationResponse>>, StatusCode> {
+async fn factor_number(
+    Path(number): Path<u64>,
+) -> AxumResult<Json<ApiResponse<FactorizationResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     match tokio::task::spawn_blocking(move || {
         let factors = factor(number);
         let is_prime_result = factors.len() == 1 && factors[0] == number;
-        
+
         FactorizationResponse {
             number,
             factors,
             is_prime: is_prime_result,
         }
-    }).await {
+    })
+    .await
+    {
         Ok(result) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -387,7 +391,7 @@ async fn factor_batch(
     Json(request): Json<BatchRequest>,
 ) -> AxumResult<Json<ApiResponse<Vec<FactorizationResponse>>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     if request.numbers.len() > 100 {
         return Ok(Json(ApiResponse {
             success: false,
@@ -396,19 +400,25 @@ async fn factor_batch(
             execution_time_ms: 0,
         }));
     }
-    
+
     match tokio::task::spawn_blocking(move || {
-        request.numbers.into_iter().map(|number| {
-            let factors = factor(number);
-            let is_prime_result = factors.len() == 1 && factors[0] == number;
-            
-            FactorizationResponse {
-                number,
-                factors,
-                is_prime: is_prime_result,
-            }
-        }).collect::<Vec<_>>()
-    }).await {
+        request
+            .numbers
+            .into_iter()
+            .map(|number| {
+                let factors = factor(number);
+                let is_prime_result = factors.len() == 1 && factors[0] == number;
+
+                FactorizationResponse {
+                    number,
+                    factors,
+                    is_prime: is_prime_result,
+                }
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    {
         Ok(results) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -430,7 +440,7 @@ async fn sieve_range_handler(
     Query(params): Query<RangeQuery>,
 ) -> AxumResult<Json<ApiResponse<SieveResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     if params.end - params.start > 10_000_000 {
         return Ok(Json(ApiResponse {
             success: false,
@@ -439,7 +449,7 @@ async fn sieve_range_handler(
             execution_time_ms: 0,
         }));
     }
-    
+
     match tokio::task::spawn_blocking(move || {
         let primes = sieve_range(params.start..params.end);
         SieveResponse {
@@ -449,7 +459,9 @@ async fn sieve_range_handler(
             primes,
             method: "Sequential".to_string(),
         }
-    }).await {
+    })
+    .await
+    {
         Ok(result) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -471,7 +483,7 @@ async fn sieve_parallel_handler(
     Query(params): Query<RangeQuery>,
 ) -> AxumResult<Json<ApiResponse<SieveResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     if params.end - params.start > 10_000_000 {
         return Ok(Json(ApiResponse {
             success: false,
@@ -480,9 +492,9 @@ async fn sieve_parallel_handler(
             execution_time_ms: 0,
         }));
     }
-    
+
     let chunk_size = params.chunk_size.unwrap_or(10_000);
-    
+
     match tokio::task::spawn_blocking(move || {
         let primes = sieve_parallel(params.start..params.end, chunk_size);
         SieveResponse {
@@ -492,7 +504,9 @@ async fn sieve_parallel_handler(
             primes,
             method: "Parallel".to_string(),
         }
-    }).await {
+    })
+    .await
+    {
         Ok(result) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -514,7 +528,7 @@ async fn gap_analysis_handler(
     Query(params): Query<RangeQuery>,
 ) -> AxumResult<Json<ApiResponse<GapAnalysisResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     if params.end - params.start > 1_000_000 {
         return Ok(Json(ApiResponse {
             success: false,
@@ -523,19 +537,25 @@ async fn gap_analysis_handler(
             execution_time_ms: 0,
         }));
     }
-    
+
     match tokio::task::spawn_blocking(move || {
         let stats = gaps::analyze_gaps(params.start..params.end);
-        
+
         GapAnalysisResponse {
             range_start: params.start,
             range_end: params.end,
             total_gaps: stats.total_gaps,
             max_gap: stats.max_gap as u64,
             average_gap: stats.average_gap,
-            gap_distribution: stats.gap_histogram.into_iter().map(|(k, v)| (k as u64, v)).collect(),
+            gap_distribution: stats
+                .gap_histogram
+                .into_iter()
+                .map(|(k, v)| (k as u64, v))
+                .collect(),
         }
-    }).await {
+    })
+    .await
+    {
         Ok(result) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -557,20 +577,23 @@ async fn twin_primes_handler(
     Query(params): Query<RangeQuery>,
 ) -> AxumResult<Json<ApiResponse<TwinPrimesResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     match tokio::task::spawn_blocking(move || {
         let twins = gaps::find_twin_primes(params.start..params.end);
-        let twin_pairs: Vec<(u64, u64)> = twins.into_iter()
+        let twin_pairs: Vec<(u64, u64)> = twins
+            .into_iter()
             .map(|tp| (tp.smaller, tp.larger))
             .collect();
-        
+
         TwinPrimesResponse {
             range_start: params.start,
             range_end: params.end,
             count: twin_pairs.len(),
             twin_primes: twin_pairs,
         }
-    }).await {
+    })
+    .await
+    {
         Ok(result) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -592,20 +615,23 @@ async fn cousin_primes_handler(
     Query(params): Query<RangeQuery>,
 ) -> AxumResult<Json<ApiResponse<TwinPrimesResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     match tokio::task::spawn_blocking(move || {
         let cousins = gaps::find_cousin_primes(params.start..params.end);
-        let cousin_pairs: Vec<(u64, u64)> = cousins.into_iter()
+        let cousin_pairs: Vec<(u64, u64)> = cousins
+            .into_iter()
             .map(|tp| (tp.smaller, tp.larger))
             .collect();
-        
+
         TwinPrimesResponse {
             range_start: params.start,
             range_end: params.end,
             count: cousin_pairs.len(),
             twin_primes: cousin_pairs, // Reusing the same structure
         }
-    }).await {
+    })
+    .await
+    {
         Ok(result) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -627,20 +653,21 @@ async fn sexy_primes_handler(
     Query(params): Query<RangeQuery>,
 ) -> AxumResult<Json<ApiResponse<TwinPrimesResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     match tokio::task::spawn_blocking(move || {
         let sexy = gaps::find_sexy_primes(params.start..params.end);
-        let sexy_pairs: Vec<(u64, u64)> = sexy.into_iter()
-            .map(|tp| (tp.smaller, tp.larger))
-            .collect();
-        
+        let sexy_pairs: Vec<(u64, u64)> =
+            sexy.into_iter().map(|tp| (tp.smaller, tp.larger)).collect();
+
         TwinPrimesResponse {
             range_start: params.start,
             range_end: params.end,
             count: sexy_pairs.len(),
             twin_primes: sexy_pairs, // Reusing the same structure
         }
-    }).await {
+    })
+    .await
+    {
         Ok(result) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -662,7 +689,7 @@ async fn range_statistics(
     Query(params): Query<RangeQuery>,
 ) -> AxumResult<Json<ApiResponse<RangeStatsResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     if params.end - params.start > 1_000_000 {
         return Ok(Json(ApiResponse {
             success: false,
@@ -671,17 +698,17 @@ async fn range_statistics(
             execution_time_ms: 0,
         }));
     }
-    
+
     match tokio::task::spawn_blocking(move || {
         let primes = sieve_range(params.start..params.end);
         let gaps = gaps::find_gaps(params.start..params.end);
         let twins = gaps::find_twin_primes(params.start..params.end);
-        
+
         let largest_prime = primes.last().copied().unwrap_or(0);
         let largest_gap = gaps.iter().map(|g| g.gap_size).max().unwrap_or(0);
         let range_size = params.end - params.start;
         let density = primes.len() as f64 / range_size as f64;
-        
+
         RangeStatsResponse {
             range_start: params.start,
             range_end: params.end,
@@ -691,7 +718,9 @@ async fn range_statistics(
             largest_gap: largest_gap as u64,
             twin_prime_count: twins.len(),
         }
-    }).await {
+    })
+    .await
+    {
         Ok(result) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -713,7 +742,7 @@ async fn run_benchmark(
     Json(request): Json<BenchmarkRequest>,
 ) -> AxumResult<Json<ApiResponse<BenchmarkResponse>>, StatusCode> {
     let start_time = std::time::Instant::now();
-    
+
     if request.iterations > 10_000 {
         return Ok(Json(ApiResponse {
             success: false,
@@ -722,10 +751,10 @@ async fn run_benchmark(
             execution_time_ms: 0,
         }));
     }
-    
+
     match tokio::task::spawn_blocking(move || {
         let bench_start = std::time::Instant::now();
-        
+
         match request.benchmark_type.as_str() {
             "primality" => {
                 // Simple primality benchmark
@@ -754,11 +783,11 @@ async fn run_benchmark(
                 return Err("Invalid benchmark type");
             }
         }
-        
+
         let total_time = bench_start.elapsed();
         let average_time_ns = total_time.as_nanos() as f64 / request.iterations as f64;
         let ops_per_second = 1_000_000_000.0 / average_time_ns;
-        
+
         Ok(BenchmarkResponse {
             benchmark_type: request.benchmark_type,
             max_n: request.max_n,
@@ -767,7 +796,9 @@ async fn run_benchmark(
             average_time_ns,
             operations_per_second: ops_per_second,
         })
-    }).await {
+    })
+    .await
+    {
         Ok(Ok(result)) => {
             let execution_time = start_time.elapsed().as_millis() as u64;
             Ok(Json(ApiResponse {
@@ -777,14 +808,12 @@ async fn run_benchmark(
                 execution_time_ms: execution_time,
             }))
         }
-        Ok(Err(e)) => {
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-                execution_time_ms: 0,
-            }))
-        }
+        Ok(Err(e)) => Ok(Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some(e.to_string()),
+            execution_time_ms: 0,
+        })),
         Err(e) => {
             warn!("Error in benchmark: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -796,40 +825,40 @@ async fn run_benchmark(
 mod tests {
     use super::*;
     use axum_test::TestServer;
-    
+
     #[tokio::test]
     async fn test_health_check() {
         let app = create_app();
         let server = TestServer::new(app).unwrap();
-        
+
         let response = server.get("/health").await;
         response.assert_status_ok();
-        
+
         let json: serde_json::Value = response.json();
         assert_eq!(json["status"], "healthy");
     }
-    
+
     #[tokio::test]
     async fn test_prime_check() {
         let app = create_app();
         let server = TestServer::new(app).unwrap();
-        
+
         let response = server.get("/prime/17").await;
         response.assert_status_ok();
-        
+
         let json: ApiResponse<PrimalityResponse> = response.json();
         assert!(json.success);
         assert!(json.data.unwrap().is_prime);
     }
-    
+
     #[tokio::test]
     async fn test_factorization() {
         let app = create_app();
         let server = TestServer::new(app).unwrap();
-        
+
         let response = server.get("/factor/15").await;
         response.assert_status_ok();
-        
+
         let json: ApiResponse<FactorizationResponse> = response.json();
         assert!(json.success);
         let data = json.data.unwrap();
@@ -837,12 +866,12 @@ mod tests {
         assert!(!data.is_prime);
         assert!(data.factors.contains(&3) && data.factors.contains(&5));
     }
-    
+
     #[tokio::test]
     async fn test_sieve() {
         let app = create_app();
         let server = TestServer::new(app).unwrap();
-        
+
         // Query params must be added via add_query_param: axum-test passes the
         // path to Url::set_path, which percent-encodes '?' (-> /sieve%3F... -> 404).
         let response = server
@@ -851,7 +880,7 @@ mod tests {
             .add_query_param("end", 20)
             .await;
         response.assert_status_ok();
-        
+
         let json: ApiResponse<SieveResponse> = response.json();
         assert!(json.success);
         let data = json.data.unwrap();

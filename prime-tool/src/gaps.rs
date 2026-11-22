@@ -34,24 +34,24 @@ pub struct TwinPrime {
 /// ```
 pub fn find_gaps(range: Range<u64>) -> Vec<GapInfo> {
     let primes = sieve_range(range);
-    
+
     if primes.len() < 2 {
         return vec![];
     }
-    
+
     let mut gaps = Vec::new();
     let mut max_gap_so_far = 0;
-    
+
     for window in primes.windows(2) {
         let start_prime = window[0];
         let end_prime = window[1];
         let gap_size = (end_prime - start_prime) as u32;
-        
+
         let is_maximal = gap_size > max_gap_so_far;
         if is_maximal {
             max_gap_so_far = gap_size;
         }
-        
+
         gaps.push(GapInfo {
             start_prime,
             end_prime,
@@ -59,7 +59,7 @@ pub fn find_gaps(range: Range<u64>) -> Vec<GapInfo> {
             is_maximal,
         });
     }
-    
+
     gaps
 }
 
@@ -75,18 +75,18 @@ pub fn find_gaps(range: Range<u64>) -> Vec<GapInfo> {
 /// ```
 pub fn find_twin_primes(range: Range<u64>) -> Vec<TwinPrime> {
     let primes = sieve_range(range);
-    
+
     let mut twin_primes = Vec::new();
-    
+
     for window in primes.windows(2) {
         let smaller = window[0];
         let larger = window[1];
-        
+
         if larger - smaller == 2 {
             twin_primes.push(TwinPrime { smaller, larger });
         }
     }
-    
+
     twin_primes
 }
 
@@ -98,8 +98,14 @@ fn find_prime_pairs(range: Range<u64>, k: u64) -> Vec<TwinPrime> {
     let primes = sieve_range(range);
     primes
         .iter()
-        .filter(|&&p| p.checked_add(k).is_some_and(|q| primes.binary_search(&q).is_ok()))
-        .map(|&p| TwinPrime { smaller: p, larger: p + k })
+        .filter(|&&p| {
+            p.checked_add(k)
+                .is_some_and(|q| primes.binary_search(&q).is_ok())
+        })
+        .map(|&p| TwinPrime {
+            smaller: p,
+            larger: p + k,
+        })
         .collect()
 }
 
@@ -133,7 +139,7 @@ pub fn analyze_gaps(range: Range<u64>) -> GapStatistics {
     let twin_primes = find_twin_primes(range.clone());
     let cousin_primes = find_cousin_primes(range.clone());
     let sexy_primes = find_sexy_primes(range);
-    
+
     if gaps.is_empty() {
         return GapStatistics {
             total_gaps: 0,
@@ -147,12 +153,12 @@ pub fn analyze_gaps(range: Range<u64>) -> GapStatistics {
             sexy_prime_count: 0,
         };
     }
-    
+
     let gap_sizes: Vec<u32> = gaps.iter().map(|g| g.gap_size).collect();
     let min_gap = *gap_sizes.iter().min().unwrap();
     let max_gap = *gap_sizes.iter().max().unwrap();
     let average_gap = gap_sizes.iter().sum::<u32>() as f64 / gap_sizes.len() as f64;
-    
+
     // Calculate median
     let mut sorted_gaps = gap_sizes.clone();
     sorted_gaps.sort_unstable();
@@ -162,13 +168,13 @@ pub fn analyze_gaps(range: Range<u64>) -> GapStatistics {
     } else {
         sorted_gaps[sorted_gaps.len() / 2] as f64
     };
-    
+
     // Build histogram
     let mut gap_histogram = std::collections::HashMap::new();
     for &gap in &gap_sizes {
         *gap_histogram.entry(gap).or_insert(0) += 1;
     }
-    
+
     GapStatistics {
         total_gaps: gaps.len(),
         min_gap,
@@ -186,11 +192,11 @@ pub fn analyze_gaps(range: Range<u64>) -> GapStatistics {
 pub fn find_first_gaps(range: Range<u64>) -> std::collections::HashMap<u32, GapInfo> {
     let gaps = find_gaps(range);
     let mut first_gaps = std::collections::HashMap::new();
-    
+
     for gap in gaps {
         first_gaps.entry(gap.gap_size).or_insert(gap);
     }
-    
+
     first_gaps
 }
 
@@ -204,18 +210,18 @@ pub fn find_maximal_gaps(range: Range<u64>) -> Vec<GapInfo> {
 /// For any integer n > 1, there is always at least one prime p such that n < p < 2n
 pub fn verify_bertrand_postulate(range: Range<u64>) -> Vec<u64> {
     let mut violations = Vec::new();
-    
+
     for n in range {
         if n <= 1 {
             continue;
         }
-        
+
         let primes_in_range = sieve_range((n + 1)..(2 * n));
         if primes_in_range.is_empty() {
             violations.push(n);
         }
     }
-    
+
     violations
 }
 
@@ -235,26 +241,26 @@ pub fn is_large_gap(gap: &GapInfo) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_find_gaps() {
         let gaps = find_gaps(2..20);
         assert!(!gaps.is_empty());
-        
+
         // Check that we have the gap between 2 and 3
         assert!(gaps.iter().any(|g| g.start_prime == 2 && g.end_prime == 3));
     }
-    
+
     #[test]
     fn test_find_twin_primes() {
         let twins = find_twin_primes(1..100);
-        
+
         // Check for known twin primes
         assert!(twins.iter().any(|t| t.smaller == 3 && t.larger == 5));
         assert!(twins.iter().any(|t| t.smaller == 5 && t.larger == 7));
         assert!(twins.iter().any(|t| t.smaller == 11 && t.larger == 13));
     }
-    
+
     #[test]
     fn test_gap_statistics() {
         let stats = analyze_gaps(2..100);
@@ -264,33 +270,33 @@ mod tests {
         assert!(stats.average_gap > 0.0);
         assert!(stats.twin_prime_count > 0);
     }
-    
+
     #[test]
     fn test_cousin_primes() {
         let cousins = find_cousin_primes(1..100);
         // (3, 7), (7, 11), (13, 17), etc.
         assert!(cousins.iter().any(|c| c.smaller == 3 && c.larger == 7));
     }
-    
+
     #[test]
     fn test_sexy_primes() {
         let sexy = find_sexy_primes(1..100);
         // (5, 11), (7, 13), (11, 17), etc.
         assert!(sexy.iter().any(|s| s.smaller == 5 && s.larger == 11));
     }
-    
+
     #[test]
     fn test_bertrand_postulate() {
         // Bertrand's postulate should hold for reasonable ranges
         let violations = verify_bertrand_postulate(2..1000);
         assert!(violations.is_empty());
     }
-    
+
     #[test]
     fn test_maximal_gaps() {
         let maximal = find_maximal_gaps(2..100);
         assert!(!maximal.is_empty());
-        
+
         // Check that gaps are in increasing order
         for window in maximal.windows(2) {
             assert!(window[1].gap_size > window[0].gap_size);

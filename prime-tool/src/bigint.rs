@@ -65,7 +65,11 @@ impl Primality {
 /// ```
 pub fn primality_big(n: &BigUint) -> Primality {
     if let Some(x) = n.to_u64() {
-        return if is_prime_u64(x) { Primality::Prime } else { Primality::Composite };
+        return if is_prime_u64(x) {
+            Primality::Prime
+        } else {
+            Primality::Composite
+        };
     }
 
     // n > u64::MAX here, so n is never equal to one of the small primes.
@@ -113,7 +117,11 @@ impl BigFactorization {
 /// still composite when it passes are returned in
 /// [`BigFactorization::unfactored`]. `None` means no limit.
 pub fn factor_big(n: &BigUint, deadline: Option<Instant>) -> BigFactorization {
-    let mut result = BigFactorization { factors: Vec::new(), unfactored: Vec::new(), proven: true };
+    let mut result = BigFactorization {
+        factors: Vec::new(),
+        unfactored: Vec::new(),
+        proven: true,
+    };
 
     if let Some(x) = n.to_u64() {
         result.factors = factor_u64(x).into_iter().map(BigUint::from).collect();
@@ -135,7 +143,9 @@ pub fn factor_big(n: &BigUint, deadline: Option<Instant>) -> BigFactorization {
             continue;
         }
         if let Some(x) = m.to_u64() {
-            result.factors.extend(factor_u64(x).into_iter().map(BigUint::from));
+            result
+                .factors
+                .extend(factor_u64(x).into_iter().map(BigUint::from));
             continue;
         }
 
@@ -263,7 +273,11 @@ fn jacobi_big(a: i64, n: &BigUint) -> i8 {
         a = &a % &n;
     }
 
-    if n.is_one() { result } else { 0 }
+    if n.is_one() {
+        result
+    } else {
+        0
+    }
 }
 
 /// Pollard-Brent rho. Returns a nontrivial factor of composite `n`,
@@ -349,17 +363,29 @@ fn is_perfect_square_big(n: &BigUint) -> bool {
 /// Reduce a signed value into [0, n).
 fn to_mod_big(x: i64, n: &BigUint) -> BigUint {
     let m = BigUint::from(x.unsigned_abs()) % n;
-    if x >= 0 || m.is_zero() { m } else { n - m }
+    if x >= 0 || m.is_zero() {
+        m
+    } else {
+        n - m
+    }
 }
 
 /// (a - b) mod n for a, b in [0, n).
 fn sub_mod(a: &BigUint, b: &BigUint, n: &BigUint) -> BigUint {
-    if a >= b { a - b } else { n - b + a }
+    if a >= b {
+        a - b
+    } else {
+        n - b + a
+    }
 }
 
 /// x / 2 mod n for odd n and x in [0, n).
 fn half_mod(x: BigUint, n: &BigUint) -> BigUint {
-    if x.is_even() { x >> 1u32 } else { (x + n) >> 1u32 }
+    if x.is_even() {
+        x >> 1u32
+    } else {
+        (x + n) >> 1u32
+    }
 }
 
 #[cfg(test)]
@@ -371,20 +397,31 @@ mod tests {
     }
 
     fn product(f: &BigFactorization) -> BigUint {
-        f.factors.iter().chain(&f.unfactored).fold(BigUint::one(), |acc, x| acc * x)
+        f.factors
+            .iter()
+            .chain(&f.unfactored)
+            .fold(BigUint::one(), |acc, x| acc * x)
     }
 
     #[test]
     fn agrees_with_u64_path() {
         for n in 0..5_000u64 {
-            assert_eq!(primality_big(&BigUint::from(n)).is_prime(), is_prime_u64(n), "n = {}", n);
+            assert_eq!(
+                primality_big(&BigUint::from(n)).is_prime(),
+                is_prime_u64(n),
+                "n = {}",
+                n
+            );
         }
     }
 
     #[test]
     fn primes_just_above_u64() {
         // 2^64 + 13 is the smallest prime above 2^64: proven, below the deterministic bound
-        assert_eq!(primality_big(&big("18446744073709551629")), Primality::Prime);
+        assert_eq!(
+            primality_big(&big("18446744073709551629")),
+            Primality::Prime
+        );
         for k in 0..13u32 {
             let n = (BigUint::one() << 64u32) + k;
             assert_eq!(primality_big(&n), Primality::Composite, "2^64 + {}", k);
@@ -432,7 +469,13 @@ mod tests {
         assert!(f.is_complete());
         assert!(!f.proven, "2^89 - 1 is only a probable prime");
         assert_eq!(product(&f), n);
-        assert_eq!(f.factors.iter().filter(|x| **x == BigUint::from(2u32)).count(), 5);
+        assert_eq!(
+            f.factors
+                .iter()
+                .filter(|x| **x == BigUint::from(2u32))
+                .count(),
+            5
+        );
         assert!(f.factors.contains(&m89));
         assert!(f.factors.contains(&BigUint::from(999_999_937u64)));
     }

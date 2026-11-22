@@ -3,8 +3,8 @@
 //! This module implements deterministic primality tests up to 2^64 using
 //! adaptive Miller-Rabin with Baillie-PSW fallback.
 
-use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 
 /// Deterministic witnesses for Miller-Rabin test for different ranges
 static MILLER_RABIN_WITNESSES: Lazy<HashMap<u64, Vec<u64>>> = Lazy::new(|| {
@@ -19,7 +19,10 @@ static MILLER_RABIN_WITNESSES: Lazy<HashMap<u64, Vec<u64>>> = Lazy::new(|| {
     map.insert(2_152_302_898_747, vec![2, 3, 5, 7, 11]);
     map.insert(3_474_749_660_383, vec![2, 3, 5, 7, 11, 13]);
     map.insert(341_550_071_728_321, vec![2, 3, 5, 7, 11, 13, 17]);
-    map.insert(3_825_123_056_546_413_051, vec![2, 3, 5, 7, 11, 13, 17, 19, 23]);
+    map.insert(
+        3_825_123_056_546_413_051,
+        vec![2, 3, 5, 7, 11, 13, 17, 19, 23],
+    );
     map.insert(u64::MAX, vec![2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]);
     map
 });
@@ -46,7 +49,7 @@ pub fn is_prime(n: u64) -> bool {
     if n % 2 == 0 || n % 3 == 0 {
         return false;
     }
-    
+
     // Deterministic Miller-Rabin covers the entire u64 range: the largest
     // witness set (first 12 primes) is proven correct for all n < 3.3e24.
     miller_rabin_deterministic(n)
@@ -65,7 +68,7 @@ pub fn miller_rabin(n: u64, witnesses: &[u64]) -> bool {
     if n % 2 == 0 {
         return false;
     }
-    
+
     // Write n-1 as d * 2^r
     let mut d = n - 1;
     let mut r = 0;
@@ -73,27 +76,27 @@ pub fn miller_rabin(n: u64, witnesses: &[u64]) -> bool {
         d /= 2;
         r += 1;
     }
-    
+
     'witness_loop: for &a in witnesses {
         if a >= n {
             continue;
         }
-        
+
         let mut x = mod_pow(a, d, n);
         if x == 1 || x == n - 1 {
             continue 'witness_loop;
         }
-        
+
         for _ in 0..r - 1 {
             x = mod_mul(x, x, n);
             if x == n - 1 {
                 continue 'witness_loop;
             }
         }
-        
+
         return false;
     }
-    
+
     true
 }
 
@@ -104,7 +107,7 @@ fn miller_rabin_deterministic(n: u64) -> bool {
             return miller_rabin(n, witnesses);
         }
     }
-    
+
     // Fallback to largest witness set
     let witnesses = MILLER_RABIN_WITNESSES.get(&u64::MAX).unwrap();
     miller_rabin(n, witnesses)
@@ -123,17 +126,17 @@ pub fn baillie_psw(n: u64) -> bool {
     if n % 2 == 0 {
         return false;
     }
-    
+
     // Check for perfect squares
     if is_perfect_square(n) {
         return false;
     }
-    
+
     // Miller-Rabin test with base 2
     if !miller_rabin(n, &[2]) {
         return false;
     }
-    
+
     // Lucas test
     lucas_test(n)
 }
@@ -251,7 +254,11 @@ fn jacobi_symbol(a: i64, n: u64) -> i8 {
         a %= n;
     }
 
-    if n == 1 { result } else { 0 }
+    if n == 1 {
+        result
+    } else {
+        0
+    }
 }
 
 /// Modular exponentiation: (base^exp) mod m
@@ -259,10 +266,10 @@ fn mod_pow(mut base: u64, mut exp: u64, m: u64) -> u64 {
     if m == 1 {
         return 0;
     }
-    
+
     let mut result = 1;
     base %= m;
-    
+
     while exp > 0 {
         if exp % 2 == 1 {
             result = mod_mul(result, base, m);
@@ -270,7 +277,7 @@ fn mod_pow(mut base: u64, mut exp: u64, m: u64) -> u64 {
         exp >>= 1;
         base = mod_mul(base, base, m);
     }
-    
+
     result
 }
 
@@ -282,7 +289,7 @@ fn mod_mul(a: u64, b: u64, m: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_small_primes() {
         let small_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47];
@@ -290,7 +297,7 @@ mod tests {
             assert!(is_prime(p), "Failed for prime {}", p);
         }
     }
-    
+
     #[test]
     fn test_small_composites() {
         let composites = [4, 6, 8, 9, 10, 12, 14, 15, 16, 18, 20, 21, 22, 24, 25];
@@ -298,7 +305,7 @@ mod tests {
             assert!(!is_prime(c), "Failed for composite {}", c);
         }
     }
-    
+
     #[test]
     fn test_large_primes() {
         assert!(is_prime(999983));
@@ -317,13 +324,13 @@ mod tests {
         // 4294967291 * 4294967279: product of two large primes
         assert!(!is_prime(4_294_967_291 * 4_294_967_279));
     }
-    
+
     #[test]
     fn test_miller_rabin() {
         assert!(miller_rabin(97, &[2]));
         assert!(!miller_rabin(91, &[2]));
     }
-    
+
     #[test]
     fn test_baillie_psw_matches_miller_rabin() {
         // Small range, exhaustively
@@ -331,7 +338,16 @@ mod tests {
             assert_eq!(baillie_psw(n), is_prime(n), "mismatch at {}", n);
         }
         // Strong pseudoprimes to base 2 and Carmichael numbers must be rejected
-        for &c in &[2047u64, 3277, 4033, 561, 1105, 1729, 3_215_031_751, 3_825_123_056_546_413_051] {
+        for &c in &[
+            2047u64,
+            3277,
+            4033,
+            561,
+            1105,
+            1729,
+            3_215_031_751,
+            3_825_123_056_546_413_051,
+        ] {
             assert!(!baillie_psw(c), "{} is composite", c);
         }
         // Large values near u64::MAX
@@ -339,7 +355,7 @@ mod tests {
             assert_eq!(baillie_psw(n), is_prime(n), "mismatch at {}", n);
         }
     }
-    
+
     #[test]
     fn test_mod_pow() {
         assert_eq!(mod_pow(2, 10, 1000), 24);

@@ -26,21 +26,21 @@
 
 pub mod algorithms;
 pub mod bigint;
-pub mod factorization;
-pub mod sieve;
-pub mod gaps;
 pub mod distributed;
 pub mod error;
+pub mod factorization;
+pub mod gaps;
+pub mod sieve;
 
-pub use algorithms::{is_prime, miller_rabin, baillie_psw};
-pub use factorization::{factor, pollard_rho, brent_factor, ecm_factor};
-pub use sieve::{
-    sieve_range, sieve_parallel, parallel_sieve, segmented_sieve, wheel_sieve,
-    segmented_sieve_with_size, count_primes_in_range, basic_sieve, optimized_sieve,
-    wheel_factorization_sieve, bitvec_sieve, vec_bool_sieve, compressed_sieve, simd_sieve
-};
-pub use gaps::{find_gaps, find_twin_primes, GapInfo, TwinPrime};
+pub use algorithms::{baillie_psw, is_prime, miller_rabin};
 pub use error::{PrimeError, Result};
+pub use factorization::{brent_factor, ecm_factor, factor, pollard_rho};
+pub use gaps::{find_gaps, find_twin_primes, GapInfo, TwinPrime};
+pub use sieve::{
+    basic_sieve, bitvec_sieve, compressed_sieve, count_primes_in_range, optimized_sieve,
+    parallel_sieve, segmented_sieve, segmented_sieve_with_size, sieve_parallel, sieve_range,
+    simd_sieve, vec_bool_sieve, wheel_factorization_sieve, wheel_sieve,
+};
 
 /// Prime number research results
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
