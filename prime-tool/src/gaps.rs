@@ -90,40 +90,27 @@ pub fn find_twin_primes(range: Range<u64>) -> Vec<TwinPrime> {
     twin_primes
 }
 
+/// Find all pairs (p, p + k) in the range where both p and p + k are prime.
+///
+/// Unlike consecutive-gap analysis, the pair members need not be adjacent
+/// primes, e.g. (3, 7) is a cousin pair even though 5 lies between them.
+fn find_prime_pairs(range: Range<u64>, k: u64) -> Vec<TwinPrime> {
+    let primes = sieve_range(range);
+    primes
+        .iter()
+        .filter(|&&p| p.checked_add(k).is_some_and(|q| primes.binary_search(&q).is_ok()))
+        .map(|&p| TwinPrime { smaller: p, larger: p + k })
+        .collect()
+}
+
 /// Find cousin prime pairs (gap of 4)
 pub fn find_cousin_primes(range: Range<u64>) -> Vec<TwinPrime> {
-    let primes = sieve_range(range);
-    
-    let mut cousin_primes = Vec::new();
-    
-    for window in primes.windows(2) {
-        let smaller = window[0];
-        let larger = window[1];
-        
-        if larger - smaller == 4 {
-            cousin_primes.push(TwinPrime { smaller, larger });
-        }
-    }
-    
-    cousin_primes
+    find_prime_pairs(range, 4)
 }
 
 /// Find sexy prime pairs (gap of 6)
 pub fn find_sexy_primes(range: Range<u64>) -> Vec<TwinPrime> {
-    let primes = sieve_range(range);
-    
-    let mut sexy_primes = Vec::new();
-    
-    for window in primes.windows(2) {
-        let smaller = window[0];
-        let larger = window[1];
-        
-        if larger - smaller == 6 {
-            sexy_primes.push(TwinPrime { smaller, larger });
-        }
-    }
-    
-    sexy_primes
+    find_prime_pairs(range, 6)
 }
 
 /// Analyze gap distribution and statistics
