@@ -209,15 +209,25 @@ pub fn find_maximal_gaps(range: Range<u64>) -> Vec<GapInfo> {
 /// Bertrand's postulate verification
 /// For any integer n > 1, there is always at least one prime p such that n < p < 2n
 pub fn verify_bertrand_postulate(range: Range<u64>) -> Vec<u64> {
+    let start = range.start.max(2);
+    if start >= range.end {
+        return Vec::new();
+    }
+    let last = range.end - 1;
+
+    // Sieve the whole span once (every p with start < p < 2·last), then walk
+    // n upward with a pointer to the smallest prime greater than n. The old
+    // version sieved (n, 2n) separately for each n, which is quadratic.
+    let primes = sieve_range((start + 1)..last.saturating_mul(2));
     let mut violations = Vec::new();
+    let mut next = 0;
 
-    for n in range {
-        if n <= 1 {
-            continue;
+    for n in start..range.end {
+        while next < primes.len() && primes[next] <= n {
+            next += 1;
         }
-
-        let primes_in_range = sieve_range((n + 1)..(2 * n));
-        if primes_in_range.is_empty() {
+        // Bertrand: some prime p with n < p < 2n
+        if primes.get(next).is_none_or(|&p| p >= 2 * n) {
             violations.push(n);
         }
     }
@@ -283,6 +293,21 @@ mod tests {
         let sexy = find_sexy_primes(1..100);
         // (5, 11), (7, 13), (11, 17), etc.
         assert!(sexy.iter().any(|s| s.smaller == 5 && s.larger == 11));
+    }
+
+    #[test]
+    fn test_bertrand_matches_per_n_check() {
+        // Reference: the original per-n implementation
+        let naive = |range: Range<u64>| -> Vec<u64> {
+            range
+                .filter(|&n| n > 1 && sieve_range((n + 1)..(2 * n)).is_empty())
+                .collect()
+        };
+        for range in [0..3, 1..2, 2..3, 0..1, 2..500, 37..1_200, 1_000..1_001] {
+            assert_eq!(verify_bertrand_postulate(range.clone()), naive(range));
+        }
+        // Large range: fast now, and Bertrand's postulate holds
+        assert!(verify_bertrand_postulate(1_000_000..2_000_000).is_empty());
     }
 
     #[test]
