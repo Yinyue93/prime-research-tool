@@ -5,6 +5,9 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 4 * * 1'  # Mondays 04:00 UTC: also runs the full benchmark suite
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -161,15 +164,69 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     
     - name: Run benchmarks
-      run: |
-        cd prime-tool
-        cargo bench --bench primality_bench
-        cargo bench --bench factorization_bench
+      # Short Criterion settings: a quick performance check on every push.
+      # Run `cargo bench` locally for full-precision numbers.
+      run: >
+        cargo bench -p prime-tool --bench primality_bench --bench factorization_bench
+        -- --warm-up-time 1 --measurement-time 2 --sample-size 20
     
     - name: Run comprehensive benchmarks
+      working-directory: prime-tool-bench
+      # Build first so the time limit covers only the benchmark run. A hang or
+      # crash fails the job (previously `|| echo` hid both).
       run: |
-        cd prime-tool-bench
-        timeout 300 cargo run --release || echo "Benchmark completed or timed out"
+        cargo build --release
+        timeout 600 cargo run --release
+    
+    - name: Upload benchmark results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: |
+          target/criterion
+          prime-tool-bench/benchmark_results
+        if-no-files-found: warn
+    
+  benchmark_full:
+    name: Full Benchmarks
+    runs-on: ubuntu-latest
+    # All Criterion targets take ~20 min even with short settings, so run them
+    # weekly and on demand rather than on every push.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install system dependencies
+      # plotters needs fontconfig (via yeslogic-fontconfig-sys), absent on the runner image
+      run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run all Criterion benchmarks
+      timeout-minutes: 60
+      run: >
+        cargo bench -p prime-tool
+        --bench primality_bench --bench factorization_bench --bench sieve_bench
+        --bench gaps_bench --bench distributed_bench
+        -- --warm-up-time 1 --measurement-time 2 --sample-size 20
+    
+    - name: Upload benchmark results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: full-benchmark-results
+        path: target/criterion
 
   build:
     name: Build All Targets
