@@ -124,7 +124,7 @@ pub fn brent_factor(n: u64) -> Option<u64> {
 
     let mut rng = rand::thread_rng();
 
-    for _ in 0..10 {
+    'attempt: for _ in 0..10 {
         let c = rng.gen_range(1..n);
         let mut y = rng.gen_range(1..n);
         let mut r = 1;
@@ -149,6 +149,7 @@ pub fn brent_factor(n: u64) -> Option<u64> {
                 let g = gcd(q, n);
                 if g > 1 {
                     if g == n {
+                        // The batch overshot; step back one at a time.
                         loop {
                             ys = pollard_f(ys, c, n);
                             let g2 = gcd(x.abs_diff(ys), n);
@@ -156,7 +157,10 @@ pub fn brent_factor(n: u64) -> Option<u64> {
                                 if g2 < n {
                                     return Some(g2);
                                 }
-                                break;
+                                // Both factors' cycles closed together. q is now
+                                // 0 mod n, so every later gcd would be n too:
+                                // retry with a new polynomial instead.
+                                continue 'attempt;
                             }
                         }
                     } else {
@@ -299,6 +303,22 @@ mod tests {
         assert_eq!(factor(12), vec![2, 2, 3]);
         assert_eq!(factor(60), vec![2, 2, 3, 5]);
         assert_eq!(factor(97), vec![97]); // prime
+    }
+
+    #[test]
+    fn test_brent_factor_semiprimes() {
+        // Regression: a failed backtrack used to leave q = 0 (mod n) and burn
+        // ~10^6 iterations before retrying. Must still find a factor every time.
+        for &(p, q) in &[
+            (31307u64, 31319u64),
+            (757, 1321),
+            (999_999_937, 1_000_000_007),
+        ] {
+            for _ in 0..50 {
+                let f = brent_factor(p * q).expect("brent_factor found no factor");
+                assert!(f == p || f == q, "{} is not a factor of {}", f, p * q);
+            }
+        }
     }
 
     #[test]
