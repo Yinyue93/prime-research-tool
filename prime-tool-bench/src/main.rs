@@ -6,10 +6,79 @@
 use prime_tool::*;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+
+/// Global allocator wrapper that tracks live heap bytes and their peak, so the
+/// memory benchmark measures real allocations.
+struct CountingAllocator;
+
+static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
+static PEAK_ALLOCATED: AtomicUsize = AtomicUsize::new(0);
+
+fn record_growth(bytes: usize) {
+    let now = ALLOCATED.fetch_add(bytes, Ordering::Relaxed) + bytes;
+    PEAK_ALLOCATED.fetch_max(now, Ordering::Relaxed);
+}
+
+unsafe impl GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let ptr = unsafe { System.alloc(layout) };
+        if !ptr.is_null() {
+            record_growth(layout.size());
+        }
+        ptr
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        unsafe { System.dealloc(ptr, layout) };
+        ALLOCATED.fetch_sub(layout.size(), Ordering::Relaxed);
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        let new_ptr = unsafe { System.realloc(ptr, layout, new_size) };
+        if !new_ptr.is_null() {
+            if new_size >= layout.size() {
+                record_growth(new_size - layout.size());
+            } else {
+                ALLOCATED.fetch_sub(layout.size() - new_size, Ordering::Relaxed);
+            }
+        }
+        new_ptr
+    }
+}
+
+#[global_allocator]
+static GLOBAL: CountingAllocator = CountingAllocator;
+
+/// Format a duration with a unit suited to its size (ns, µs, ms or s).
+fn fmt_dur(d: Duration) -> String {
+    let ns = d.as_nanos() as f64;
+    if ns < 1e3 {
+        format!("{:.0} ns", ns)
+    } else if ns < 1e6 {
+        format!("{:.2} µs", ns / 1e3)
+    } else if ns < 1e9 {
+        format!("{:.2} ms", ns / 1e6)
+    } else {
+        format!("{:.2} s", ns / 1e9)
+    }
+}
+
+fn fmt_bytes(bytes: usize) -> String {
+    let b = bytes as f64;
+    if b < 1024.0 {
+        format!("{} B", bytes)
+    } else if b < 1024.0 * 1024.0 {
+        format!("{:.1} KiB", b / 1024.0)
+    } else {
+        format!("{:.2} MiB", b / (1024.0 * 1024.0))
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -45,24 +114,25 @@ async fn run_primality_benchmarks(results_dir: &Path) -> anyhow::Result<()> {
     println!("\n🔍 Running Primality Testing Benchmarks");
     println!("{}", "-".repeat(50));
 
+    // (category, numbers, whether every number in the category is prime)
     let test_cases = vec![
-        ("Small primes", generate_small_primes(1000)),
-        ("Medium primes", generate_medium_primes(1000)),
-        ("Large primes", generate_large_primes(100)),
-        ("Carmichael numbers", generate_carmichael_numbers()),
-        ("Random composites", generate_random_composites(1000)),
+        ("Small primes", generate_small_primes(1000), true),
+        ("Medium primes", generate_medium_primes(1000), true),
+        ("Large primes", generate_large_primes(100), true),
+        ("Carmichael numbers", generate_carmichael_numbers(), false),
+        ("Random composites", generate_random_composites(1000), false),
     ];
 
     let mut results = HashMap::new();
 
-    for (category, numbers) in test_cases {
+    for (category, numbers, expected_prime) in test_cases {
         println!("\nTesting {}: {} numbers", category, numbers.len());
 
-        // Test adaptive algorithm
+        // Test adaptive algorithm; count answers that match the expected result
         let start = Instant::now();
         let mut correct = 0;
         for &n in &numbers {
-            if is_prime(n) {
+            if is_prime(n) == expected_prime {
                 correct += 1;
             }
         }
@@ -111,7 +181,17 @@ async fn run_primality_benchmarks(results_dir: &Path) -> anyhow::Result<()> {
             "  Adaptive algorithm: {:.2} ns/op, {:.0} ops/sec",
             avg_time_ns, ops_per_sec
         );
-        println!("  Correct identifications: {}/{}", correct, numbers.len());
+        println!(
+            "  Correctly classified as {}: {}/{}{}",
+            if expected_prime { "prime" } else { "composite" },
+            correct,
+            numbers.len(),
+            if correct == numbers.len() {
+                ""
+            } else {
+                "  ❌ MISCLASSIFIED"
+            }
+        );
 
         if avg_time_ns < 1000.0 {
             println!("  ✅ Sub-microsecond requirement MET!");
@@ -171,8 +251,8 @@ async fn run_factorization_benchmarks(results_dir: &Path) -> anyhow::Result<()> 
             },
         );
 
-        let avg_time_ms = complete_time.as_millis() as f64 / numbers.len() as f64;
-        println!("  Average factorization time: {:.2} ms", avg_time_ms);
+        let avg_time = complete_time / numbers.len().max(1) as u32;
+        println!("  Average factorization time: {}", fmt_dur(avg_time));
         println!("  Total factors found: {}", total_factors);
     }
 
@@ -222,16 +302,16 @@ async fn run_sieve_benchmarks(results_dir: &Path) -> anyhow::Result<()> {
 
         println!("  Primes found: {}", seq_primes.len());
         println!(
-            "  Sequential: {:.2} ms, {:.0} primes/sec",
-            seq_time.as_millis(),
+            "  Sequential: {}, {:.0} primes/sec",
+            fmt_dur(seq_time),
             primes_per_sec
         );
         println!(
-            "  Parallel: {:.2} ms, speedup: {:.2}x",
-            par_time.as_millis(),
+            "  Parallel: {}, speedup: {:.2}x",
+            fmt_dur(par_time),
             speedup
         );
-        println!("  Segmented: {:.2} ms", seg_time.as_millis());
+        println!("  Segmented: {}", fmt_dur(seg_time));
 
         results.insert(
             size.to_string(),
@@ -286,26 +366,18 @@ async fn run_gap_analysis_benchmarks() -> anyhow::Result<()> {
         let sexy = gaps::find_sexy_primes(range.clone());
         let sexy_time = start.elapsed();
 
-        println!("  Gap analysis: {:.2} ms", gap_time.as_millis());
+        println!("  Gap analysis: {}", fmt_dur(gap_time));
         println!(
             "  Total gaps: {}, Max gap: {}, Avg gap: {:.2}",
             stats.total_gaps, stats.max_gap, stats.average_gap
         );
+        println!("  Twin primes: {} ({})", twins.len(), fmt_dur(twin_time));
         println!(
-            "  Twin primes: {} ({:.2} ms)",
-            twins.len(),
-            twin_time.as_millis()
-        );
-        println!(
-            "  Cousin primes: {} ({:.2} ms)",
+            "  Cousin primes: {} ({})",
             cousins.len(),
-            cousin_time.as_millis()
+            fmt_dur(cousin_time)
         );
-        println!(
-            "  Sexy primes: {} ({:.2} ms)",
-            sexy.len(),
-            sexy_time.as_millis()
-        );
+        println!("  Sexy primes: {} ({})", sexy.len(), fmt_dur(sexy_time));
     }
 
     Ok(())
@@ -316,8 +388,10 @@ async fn run_distributed_benchmarks() -> anyhow::Result<()> {
     println!("\n🌐 Running Distributed Computing Benchmarks");
     println!("{}", "-".repeat(50));
 
-    // Test distributed sieve coordination
-    let coordinator = distributed::DistributedCoordinator::new(30);
+    // Test distributed sieve coordination. Each registered node runs as a
+    // local worker task; fail rather than hang if work does not finish.
+    let coordinator = distributed::DistributedCoordinator::new(30)
+        .with_completion_timeout(Duration::from_secs(60));
 
     // Simulate multiple nodes
     for i in 0..4 {
@@ -342,8 +416,8 @@ async fn run_distributed_benchmarks() -> anyhow::Result<()> {
     match result {
         Ok(primes) => {
             println!(
-                "  Distributed sieve completed in {:.2} ms",
-                distributed_time.as_millis()
+                "  Distributed sieve (4 nodes, 10 work units) completed in {}",
+                fmt_dur(distributed_time)
             );
             println!("  Primes found: {}", primes.len());
 
@@ -352,22 +426,18 @@ async fn run_distributed_benchmarks() -> anyhow::Result<()> {
             let local_primes = sieve_range(1..100_000);
             let local_time = start.elapsed();
 
-            println!(
-                "  Local sieve completed in {:.2} ms",
-                local_time.as_millis()
-            );
-            println!(
-                "  Verification: {}",
-                if primes.len() == local_primes.len() {
-                    "✅ PASS"
-                } else {
-                    "❌ FAIL"
-                }
-            );
+            println!("  Local sieve completed in {}", fmt_dur(local_time));
+            if primes == local_primes {
+                println!("  Verification: ✅ PASS");
+            } else {
+                anyhow::bail!(
+                    "distributed sieve returned {} primes, local sieve {}",
+                    primes.len(),
+                    local_primes.len()
+                );
+            }
         }
-        Err(e) => {
-            println!("  Distributed sieve failed: {}", e);
-        }
+        Err(e) => anyhow::bail!("distributed sieve failed: {}", e),
     }
 
     Ok(())
@@ -383,18 +453,23 @@ async fn run_memory_benchmarks() -> anyhow::Result<()> {
     for &range_end in &ranges {
         println!("\nMemory analysis for range 1..{}", range_end);
 
-        // This is a simplified memory analysis
-        // In production, you'd use more sophisticated memory profiling
-        let start_memory = get_process_memory();
+        // Heap usage from the counting global allocator: peak bytes allocated
+        // while sieving, and bytes still held afterwards (the result vector).
+        let baseline = ALLOCATED.load(Ordering::Relaxed);
+        PEAK_ALLOCATED.store(baseline, Ordering::Relaxed);
         let primes = sieve_range(1..range_end);
-        let end_memory = get_process_memory();
-
-        let memory_used = end_memory.saturating_sub(start_memory);
-        let memory_per_prime = memory_used as f64 / primes.len() as f64;
+        let peak = PEAK_ALLOCATED
+            .load(Ordering::Relaxed)
+            .saturating_sub(baseline);
+        let retained = ALLOCATED.load(Ordering::Relaxed).saturating_sub(baseline);
 
         println!("  Primes found: {}", primes.len());
-        println!("  Estimated memory used: {} KB", memory_used / 1024);
-        println!("  Memory per prime: {:.1} bytes", memory_per_prime);
+        println!("  Peak heap during sieve: {}", fmt_bytes(peak));
+        println!(
+            "  Retained (result vector): {} ({:.1} bytes/prime)",
+            fmt_bytes(retained),
+            retained as f64 / primes.len().max(1) as f64
+        );
     }
 
     Ok(())
@@ -411,22 +486,28 @@ async fn run_scalability_benchmarks() -> anyhow::Result<()> {
 
     println!("\nThread scaling analysis for sieve (range 1..1,000,000):");
 
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    println!("  (available parallelism: {} threads)", cores);
+
+    let mut single_thread_time = None;
     for &thread_count in &thread_counts {
-        // Set thread count
-        rayon::ThreadPoolBuilder::new()
+        // A dedicated pool per thread count: the global rayon pool can only be
+        // configured once per process, so build_global() would be ignored.
+        let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(thread_count)
-            .build_global()
-            .unwrap_or(());
+            .build()?;
 
         let start = Instant::now();
-        let primes = sieve_parallel(range.clone(), 50_000);
+        let primes = pool.install(|| sieve_parallel(range.clone(), 50_000));
         let time = start.elapsed();
+        let baseline = *single_thread_time.get_or_insert(time);
 
         println!(
-            "  {} threads: {:.2} ms, {} primes",
+            "  {:>2} threads: {}, {} primes, speedup {:.2}x",
             thread_count,
-            time.as_millis(),
-            primes.len()
+            fmt_dur(time),
+            primes.len(),
+            baseline.as_secs_f64() / time.as_secs_f64()
         );
     }
 
@@ -446,7 +527,6 @@ async fn generate_benchmark_report() -> anyhow::Result<()> {
     generate_performance_plots()?;
 
     println!("  ✅ HTML report: ./benchmark_results/report.html");
-    println!("  ✅ Performance plots: ./benchmark_results/plots/");
 
     Ok(())
 }
@@ -737,7 +817,7 @@ fn generate_html_report() -> anyhow::Result<String> {
         <p>Coordinated distributed processing with work balancing and fault tolerance.</p>
         
         <div class="chart-container">
-            <p><em>Detailed performance charts available in ./benchmark_results/plots/</em></p>
+            <p><em>Performance charts are not implemented yet.</em></p>
         </div>
         
         <h2>📈 Conclusions</h2>
@@ -762,16 +842,9 @@ fn generate_performance_plots() -> anyhow::Result<()> {
     fs::create_dir_all("benchmark_results/plots")?;
 
     // TODO: Implement actual plotting functionality
-    println!("  Performance plots generation placeholder");
+    println!("  (Performance plots are not implemented yet)");
 
     Ok(())
-}
-
-/// Get approximate process memory usage (simplified implementation)
-fn get_process_memory() -> usize {
-    // This is a placeholder - in production you'd use a proper memory profiling library
-    // For now, return a dummy value
-    1024 * 1024 // 1MB placeholder
 }
 
 #[cfg(test)]
