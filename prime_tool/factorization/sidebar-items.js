@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["brent_factor","ec_double","ecm_factor","extended_gcd","factor","gcd","mod_inverse","mod_mul","pollard_f","pollard_rho","trial_division"]};

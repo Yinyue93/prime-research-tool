@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["algorithms","bigint","distributed","error","factorization","gaps","sieve"],"struct":["Config","PrimeResults","Statistics"]};

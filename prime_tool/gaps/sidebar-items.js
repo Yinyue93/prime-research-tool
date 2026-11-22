@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["analyze_gaps","expected_max_gap","find_cousin_primes","find_first_gaps","find_gaps","find_maximal_gaps","find_prime_pairs","find_sexy_primes","find_twin_primes","is_large_gap","verify_bertrand_postulate"],"struct":["GapInfo","GapStatistics","TwinPrime"]};

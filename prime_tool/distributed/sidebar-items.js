@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TaskResult","TaskType"],"fn":["create_sieve_work_units","estimate_sieve_time"],"struct":["ClusterStats","DistributedCoordinator","LocalExecutor","NodeInfo","WorkResult","WorkUnit"]};

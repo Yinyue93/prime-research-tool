@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["benchmark_factorization","benchmark_gap_analysis","benchmark_primality","benchmark_sieve","display_benchmark_results","format_number","generate_composite_numbers","generate_test_numbers","run_all_benchmarks"]};

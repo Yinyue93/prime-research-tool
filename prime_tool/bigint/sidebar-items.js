@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DETERMINISTIC_BASES","DETERMINISTIC_BOUND"],"enum":["Primality"],"fn":["brent_big","factor_big","half_mod","is_perfect_square_big","jacobi_big","miller_rabin_big","perfect_power_big","primality_big","strong_lucas_big","sub_mod","to_mod_big"],"static":["SMALL_PRIMES"],"struct":["BigFactorization"]};
