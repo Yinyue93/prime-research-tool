@@ -12,7 +12,7 @@ A high-performance Rust command-line tool and library for advanced prime number 
 
 ### 🔍 **Primality Testing**
 - **Deterministic Miller-Rabin** for numbers up to 2⁶⁴
-- **Baillie-PSW fallback** for larger numbers
+- **Baillie-PSW** (strong Lucas) available as an independent check
 - **Sub-microsecond performance** for candidates ≤ 10⁸
 - **Adaptive algorithm selection** based on input size
 
@@ -50,174 +50,190 @@ A high-performance Rust command-line tool and library for advanced prime number 
 
 ### Installation
 
-```bash
-# Install from crates.io
-cargo install prime-tool-cli
+Requires a Rust toolchain ([rustup.rs](https://rustup.rs)).
 
-# Or build from source
-git clone https://github.com/example/prime-research-tool.git
+```bash
+git clone https://github.com/Yinyue93/prime-research-tool.git
 cd prime-research-tool
-cargo build --release
+
+# Build and install the `prime-tool` command into ~/.cargo/bin (on your PATH)
+cargo install --path prime-tool-cli
 ```
+
+Re-run `cargo install --path prime-tool-cli` after making changes to update the installed binary.
+To run without installing, use `cargo run --release -p prime-tool-cli -- <args>`.
 
 ### Basic Usage
 
 ```bash
 # Check if a number is prime
-prime-tool-cli is-prime --n 999983
+prime-tool is-prime -n 999983
 
 # Factor a number
-prime-tool-cli factor --n 1234567
+prime-tool factor -n 1234567
 
 # Find all primes in a range
-prime-tool-cli sieve --range 1..1000000
+prime-tool sieve -r 1..1000000
 
 # Analyze prime gaps
-prime-tool-cli gaps --range 1..100000 --twins
+prime-tool gaps -r 1..100000 --twins
 
-# Generate visualizations
-prime-tool-cli plot --range 1..10000 --type prime-count --output primes.svg
+# Generate visualizations (written to ./plots by default)
+prime-tool plot -r 1..10000 -p prime-count
 
-# Start web service
-prime-tool-cli web --port 3000
+# See all commands and options
+prime-tool --help
+prime-tool <command> --help
 ```
+
+### Global Options
+
+Global options go **before** the subcommand:
+
+| Option | Description |
+|---|---|
+| `-f, --format <table\|json\|csv\|plain>` | Output format (default: `table`) |
+| `-o, --output <FILE>` | Write results to a file instead of stdout |
+| `-j, --threads <N>` | Number of worker threads (default: auto-detect) |
+| `-v, --verbose` | Enable debug logging |
+
+```bash
+prime-tool -f json is-prime -n 999983     # ✅
+prime-tool is-prime -n 999983 -f json     # ❌ error: unexpected argument
+```
+
+Ranges are written `start..end` (end exclusive) or `start..=end` (end inclusive).
 
 ## 📖 Detailed Usage
 
 ### Primality Testing
 
 ```bash
-# Single number testing
-prime-tool-cli is-prime --n 999983
-# Output: 999983 is prime (verified in 0.234μs using Miller-Rabin)
+prime-tool is-prime -n 999983
+prime-tool -f plain is-prime -n 999983
+# 999983 is PRIME
 
-# Batch testing with different output formats
-prime-tool-cli is-prime --n 999983 --output json
-prime-tool-cli is-prime --n 999983 --output table
+# JSON output
+prime-tool -f json is-prime -n 999983
+# {"number": 999983, "is_prime": true, "certainty": "proven", "execution_time_ms": 0}
 
-# Test large numbers (uses Baillie-PSW)
-prime-tool-cli is-prime --n 18446744073709551557
-
-# Verbose output with algorithm details
-prime-tool-cli is-prime --n 999983 --verbose
+# Numbers of any size are accepted
+prime-tool is-prime -n 18446744073709551557   # largest 64-bit prime
+prime-tool -f plain is-prime -n 170141183460469231731687303715884105727   # 2^127 - 1
+# 170141183460469231731687303715884105727 is PROBABLE PRIME
 ```
+
+Results are **proven** for numbers below ~3.3 × 10²⁴ (deterministic Miller-Rabin).
+Above that, primes are reported as **probable primes** (Baillie-PSW: no counterexample
+is known, but it is not a proof); "composite" is always proven. The `certainty`
+field in JSON/CSV output is `"proven"` or `"probable"`.
 
 ### Factorization
 
 ```bash
-# Basic factorization
-prime-tool-cli factor --n 1234567
-# Output: 1234567 = 127 × 9721
+prime-tool -f plain factor -n 1234567
+# 1234567 = 127 × 9721
 
-# Large number factorization
-prime-tool-cli factor --n 123456789012345
+prime-tool factor -n 123456789012345
+# 3 × 5 × 283 × 3851 × 7552031
 
-# JSON output for programmatic use
-prime-tool-cli factor --n 1234567 --output json
-# Output: {"number": 1234567, "factors": [127, 9721], "is_prime": false}
+# JSON / CSV output for programmatic use
+prime-tool -f json factor -n 1234567
+# {"number": 1234567, "factors": [127, 9721], "unfactored": [], "complete": true,
+#  "certainty": "proven", "execution_time_ms": 0}
+prime-tool -f csv factor -n 1234567
 
-# CSV output for data analysis
-prime-tool-cli factor --n 1234567 --output csv
+# Numbers larger than 64 bits
+prime-tool -f plain factor -n 132543035165161565106540654065014651303
+# 132543035165161565106540654065014651303 = 31 × 26641 × 160488787189720386242573784604393
+
+# Limit time spent on hard composites (default 60 s, 0 = no limit)
+prime-tool factor -n 340282366920938463463374607431768211457 --timeout 10
 ```
+
+Factoring numbers above 64 bits uses Pollard-Brent rho, whose running time grows with
+the square root of the *second-largest* prime factor. Numbers with factors up to ~15
+digits factor quickly; products of two large primes (e.g. 20+ digits each) may not
+finish. When the timeout is reached, any unsplit composite parts are listed in
+`unfactored` with `complete: false`. JSON numbers are always exact integers, even
+beyond 64 bits.
 
 ### Sieving Operations
 
 ```bash
 # Basic range sieving
-prime-tool-cli sieve --range 1..1000
+prime-tool sieve -r 1..1000
 
-# Parallel sieving with custom thread count
-prime-tool-cli sieve --range 1..1000000 --parallel --threads 8
+# Parallel sieving with 8 threads and a custom chunk size
+prime-tool -j 8 sieve -r 1..1000000 --parallel --chunk-size 50000
 
-# Distributed sieving across network nodes
-prime-tool-cli sieve --range 1..10000000 --distributed --nodes node1:8080,node2:8080
+# Save results to a file
+prime-tool -f json -o primes.json sieve -r 1..1000000
 
-# Output to file
-prime-tool-cli sieve --range 1..1000000 --output json --file primes.json
-
-# Memory-efficient segmented sieving
-prime-tool-cli sieve --range 1..100000000 --segmented --segment-size 1000000
+# Distributed sieving (requires running worker nodes; repeat --nodes per node)
+prime-tool sieve -r 1..10000000 --nodes node1:8080 --nodes node2:8080
 ```
 
 ### Gap Analysis
 
 ```bash
-# Basic gap analysis
-prime-tool-cli gaps --range 1..100000
-# Output: Found 9592 gaps, max gap: 154, average gap: 10.43
+# Gap statistics (count, min/max/average/median, twin/cousin/sexy counts)
+prime-tool gaps -r 1..100000
+# Total gaps: 9591, max gap: 72, average gap: 10.43
+# Twin primes: 1224, cousin primes: 1216, sexy primes: 2447
 
-# Find twin primes
-prime-tool-cli gaps --range 1..100000 --twins
-# Output: Found 1224 twin prime pairs
+# Include the full lists of twin (p, p+2), cousin (p, p+4) and sexy (p, p+6)
+# pairs — use JSON to see the pairs themselves
+prime-tool -f json gaps -r 1..100000 --twins --cousins --sexy
 
-# Find cousin primes (gap of 4)
-prime-tool-cli gaps --range 1..100000 --cousins
-
-# Find sexy primes (gap of 6)
-prime-tool-cli gaps --range 1..100000 --sexy
-
-# Comprehensive analysis with plotting
-prime-tool-cli gaps --range 1..100000 --twins --plot --output gaps.svg
-
-# Statistical analysis
-prime-tool-cli gaps --range 1..1000000 --stats --output json
+# Also write a gap histogram to gap_histogram.svg in the current directory
+prime-tool gaps -r 1..100000 --plot
 ```
 
 ### Visualization and Plotting
 
+Plots are SVG files written to `--output-dir` (default: `plots`).
+
 ```bash
-# Prime counting function π(x)
-prime-tool-cli plot --range 1..10000 --type prime-count --output pi_x.svg
+# Prime counting function π(x)   -> plots/prime_count.svg
+prime-tool plot -r 1..10000 -p prime-count
 
-# Gap histogram
-prime-tool-cli plot --range 1..100000 --type gap-histogram --output gaps.svg
+# Gap histogram                   -> plots/gaps.svg
+prime-tool plot -r 1..100000 -p gaps
 
-# Prime distribution density
-prime-tool-cli plot --range 1..100000 --type distribution --output density.svg
+# Prime distribution density      -> plots/distribution.svg
+prime-tool plot -r 1..100000 -p distribution
 
-# Twin prime progression
-prime-tool-cli plot --range 1..100000 --type twin-primes --output twins.svg
-
-# Performance comparison charts
-prime-tool-cli plot --type performance --algorithms miller-rabin,baillie-psw --output perf.svg
-
-# Generate all plots
-prime-tool-cli plot --range 1..100000 --type all --output-dir ./plots/
+# All plots into a custom directory
+prime-tool plot -r 1..100000 -p all --output-dir ./my-plots
 ```
 
 ### Benchmarking
 
+Quick built-in benchmarks (for rigorous measurements, use `cargo bench` — see below).
+
 ```bash
-# Run all benchmarks
-prime-tool-cli benchmark --all
+# Run all benchmarks (defaults: --max-n 100000000 --iterations 1000)
+prime-tool benchmark
 
-# Specific benchmark types
-prime-tool-cli benchmark --type primality --max-n 1000000 --iterations 10000
-prime-tool-cli benchmark --type factorization --max-n 1000000 --iterations 1000
-prime-tool-cli benchmark --type sieve --max-n 10000000
-prime-tool-cli benchmark --type gaps --max-n 1000000
-
-# Performance regression testing
-prime-tool-cli benchmark --compare-baseline --baseline-file previous_results.json
-
-# Memory usage analysis
-prime-tool-cli benchmark --memory --max-n 10000000
-
-# Thread scaling analysis
-prime-tool-cli benchmark --scaling --threads 1,2,4,8,16
+# Specific benchmark types: primality, factorization, sieve
+prime-tool benchmark -b primality --max-n 1000000 --iterations 10000
+prime-tool benchmark -b factorization --max-n 1000000 --iterations 1000
+prime-tool benchmark -b sieve --max-n 10000000 --iterations 5
 ```
 
 ### Web Service
 
+The REST API is a separate binary in the `prime-tool-web` crate and listens on
+`127.0.0.1:3000`. (The `prime-tool web` subcommand is currently a placeholder
+and does not start a server.)
+
 ```bash
-# Start web service on default port (3000)
-prime-tool-cli web
+cargo run --release -p prime-tool-web
 
-# Custom port and configuration
-prime-tool-cli web --port 8080 --threads 16 --max-range 10000000
-
-# Enable CORS for browser access
-prime-tool-cli web --cors --allowed-origins "http://localhost:3000,https://myapp.com"
+# or install it alongside the CLI
+cargo install --path prime-tool-web
+prime-tool-web
 ```
 
 #### Web API Endpoints
@@ -476,7 +492,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ```bash
 # Clone the repository
-git clone https://github.com/example/prime-research-tool.git
+git clone https://github.com/Yinyue93/prime-research-tool.git
 cd prime-research-tool
 
 # Install development dependencies
