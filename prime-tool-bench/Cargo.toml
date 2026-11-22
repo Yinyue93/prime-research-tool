@@ -17,9 +17,6 @@ path = "src/main.rs"
 # Core library
 prime-tool = { path = "../prime-tool" }
 
-# Benchmarking
-criterion = { version = "0.5", features = ["html_reports"] }
-
 # Async runtime
 tokio = { version = "1.0", features = ["full"] }
 
@@ -40,12 +37,6 @@ anyhow = "1.0"
 # Logging
 log = "0.4"
 env_logger = "0.10"
-
-# Statistics
-statistical = "1.0"
-
-# Table formatting
-comfy-table = "7.1"
 
 # Plotting for benchmark results
 plotters = "0.3"
