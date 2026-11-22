@@ -132,7 +132,7 @@ pub fn generate_gap_histogram<P: AsRef<Path>>(
         .margin(10)
         .x_label_area_size(50)
         .y_label_area_size(60)
-        .build_cartesian_2d(0u32..max_gap + 1, 0usize..max_count + 1)?;
+        .build_cartesian_2d(0f64..(max_gap + 1) as f64, 0usize..max_count + 1)?;
     
     chart
         .configure_mesh()
@@ -143,7 +143,12 @@ pub fn generate_gap_histogram<P: AsRef<Path>>(
     chart.draw_series(
         sorted_gaps
             .iter()
-            .map(|(&gap, &count)| Rectangle::new([(gap, 0), (gap, count)], BLUE.filled()))
+            // Bars must span an x interval; (gap, 0)..(gap, count) has zero width
+            // and renders as nothing. Center a 0.8-wide bar on each gap size.
+            .map(|(&gap, &count)| {
+                let x = gap as f64;
+                Rectangle::new([(x - 0.4, 0), (x + 0.4, count)], BLUE.filled())
+            })
     )?;
     
     root.present()?;
