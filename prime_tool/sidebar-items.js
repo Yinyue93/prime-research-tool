@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["algorithms","bigint","distributed","error","factorization","gaps","sieve"],"struct":["Config","PrimeResults","Statistics"]};
+window.SIDEBAR_ITEMS = {"enum":["BenchmarkType","Commands","OutputFormat","PlotType"],"fn":["main","parse_range"],"mod":["benchmarks","output","plotting"],"struct":["Cli"]};
