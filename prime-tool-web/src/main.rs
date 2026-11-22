@@ -843,7 +843,13 @@ mod tests {
         let app = create_app();
         let server = TestServer::new(app).unwrap();
         
-        let response = server.get("/sieve?start=1&end=20").await;
+        // Query params must be added via add_query_param: axum-test passes the
+        // path to Url::set_path, which percent-encodes '?' (-> /sieve%3F... -> 404).
+        let response = server
+            .get("/sieve")
+            .add_query_param("start", 1)
+            .add_query_param("end", 20)
+            .await;
         response.assert_status_ok();
         
         let json: ApiResponse<SieveResponse> = response.json();

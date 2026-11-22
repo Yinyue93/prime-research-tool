@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use rand::Rng;
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 use serde::{Serialize, Deserialize};
 
 #[tokio::main]
@@ -18,12 +19,13 @@ async fn main() -> anyhow::Result<()> {
     println!("{}", "=".repeat(70));
     
     // Create output directory for results
-    fs::create_dir_all("benchmark_results")?;
+    let results_dir = Path::new("benchmark_results");
+    fs::create_dir_all(results_dir)?;
     
     // Run all benchmark suites
-    run_primality_benchmarks().await?;
-    run_factorization_benchmarks().await?;
-    run_sieve_benchmarks().await?;
+    run_primality_benchmarks(results_dir).await?;
+    run_factorization_benchmarks(results_dir).await?;
+    run_sieve_benchmarks(results_dir).await?;
     run_gap_analysis_benchmarks().await?;
     run_distributed_benchmarks().await?;
     run_memory_benchmarks().await?;
@@ -39,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Comprehensive primality testing benchmarks
-async fn run_primality_benchmarks() -> anyhow::Result<()> {
+async fn run_primality_benchmarks(results_dir: &Path) -> anyhow::Result<()> {
     println!("\n🔍 Running Primality Testing Benchmarks");
     println!("{}", "-".repeat(50));
     
@@ -109,13 +111,13 @@ async fn run_primality_benchmarks() -> anyhow::Result<()> {
     }
     
     // Save results
-    save_primality_results(&results)?;
+    save_primality_results(&results, results_dir)?;
     
     Ok(())
 }
 
 /// Comprehensive factorization benchmarks
-async fn run_factorization_benchmarks() -> anyhow::Result<()> {
+async fn run_factorization_benchmarks(results_dir: &Path) -> anyhow::Result<()> {
     println!("\n🔧 Running Factorization Benchmarks");
     println!("{}", "-".repeat(50));
     
@@ -161,13 +163,13 @@ async fn run_factorization_benchmarks() -> anyhow::Result<()> {
         println!("  Total factors found: {}", total_factors);
     }
     
-    save_factorization_results(&results)?;
+    save_factorization_results(&results, results_dir)?;
     
     Ok(())
 }
 
 /// Comprehensive sieve benchmarks
-async fn run_sieve_benchmarks() -> anyhow::Result<()> {
+async fn run_sieve_benchmarks(results_dir: &Path) -> anyhow::Result<()> {
     println!("\n🔢 Running Sieve Benchmarks");
     println!("{}", "-".repeat(50));
     
@@ -221,7 +223,7 @@ async fn run_sieve_benchmarks() -> anyhow::Result<()> {
         });
     }
     
-    save_sieve_results(&results)?;
+    save_sieve_results(&results, results_dir)?;
     
     Ok(())
 }
@@ -583,21 +585,21 @@ fn benchmark_ecm(numbers: &[u64]) -> Option<Duration> {
 }
 
 /// Save benchmark results
-fn save_primality_results(results: &HashMap<String, PrimalityBenchmarkResult>) -> anyhow::Result<()> {
+fn save_primality_results(results: &HashMap<String, PrimalityBenchmarkResult>, results_dir: &Path) -> anyhow::Result<()> {
     let json = serde_json::to_string_pretty(results)?;
-    fs::write("benchmark_results/primality_results.json", json)?;
+    fs::write(results_dir.join("primality_results.json"), json)?;
     Ok(())
 }
 
-fn save_factorization_results(results: &HashMap<String, FactorizationBenchmarkResult>) -> anyhow::Result<()> {
+fn save_factorization_results(results: &HashMap<String, FactorizationBenchmarkResult>, results_dir: &Path) -> anyhow::Result<()> {
     let json = serde_json::to_string_pretty(results)?;
-    fs::write("benchmark_results/factorization_results.json", json)?;
+    fs::write(results_dir.join("factorization_results.json"), json)?;
     Ok(())
 }
 
-fn save_sieve_results(results: &HashMap<String, SieveBenchmarkResult>) -> anyhow::Result<()> {
+fn save_sieve_results(results: &HashMap<String, SieveBenchmarkResult>, results_dir: &Path) -> anyhow::Result<()> {
     let json = serde_json::to_string_pretty(results)?;
-    fs::write("benchmark_results/sieve_results.json", json)?;
+    fs::write(results_dir.join("sieve_results.json"), json)?;
     Ok(())
 }
 
@@ -725,8 +727,10 @@ mod tests {
     
     #[tokio::test]
     async fn test_benchmark_functions() {
-        // Quick smoke tests
-        let result = run_primality_benchmarks().await;
-        assert!(result.is_ok());
+        // Quick smoke test; write results to a temp dir rather than the repo
+        let dir = tempfile::tempdir().unwrap();
+        let result = run_primality_benchmarks(dir.path()).await;
+        assert!(result.is_ok(), "{:?}", result.err());
+        assert!(dir.path().join("primality_results.json").exists());
     }
 }
