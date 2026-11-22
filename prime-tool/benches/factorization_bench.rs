@@ -213,32 +213,32 @@ fn bench_parallel_factorization(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark factorization with timeout constraints
-fn bench_factorization_with_timeout(c: &mut Criterion) {
-    let mut group = c.benchmark_group("factorization_timeout");
+/// Benchmark arbitrary-precision factorization (numbers above u64)
+fn bench_big_number_factorization(c: &mut Criterion) {
+    use num_bigint::BigUint;
 
-    let hard_numbers = generate_hard_to_factor_numbers(20);
+    let mut group = c.benchmark_group("big_number_factorization");
 
-    // Test different timeout strategies
-    let timeout_configs = vec![
-        ("quick", std::time::Duration::from_millis(1)),
-        ("normal", std::time::Duration::from_millis(10)),
-        ("extended", std::time::Duration::from_millis(100)),
+    let m61: BigUint = (BigUint::from(1u32) << 61u32) - 1u32;
+    let cases: Vec<(&str, BigUint)> = vec![
+        // 2^67 - 1 = 193707721 × 761838257287
+        ("mersenne_67", (BigUint::from(1u32) << 67u32) - 1u32),
+        // 31 × 26641 × (33-digit probable prime)
+        (
+            "39_digit",
+            "132543035165161565106540654065014651303".parse().unwrap(),
+        ),
+        // 999999937 × 1000000007 × (2^61 - 1)
+        (
+            "three_factors_123_bit",
+            BigUint::from(999_999_937u64) * 1_000_000_007u64 * &m61,
+        ),
     ];
 
-    for (timeout_name, _timeout_duration) in timeout_configs {
-        group.bench_with_input(
-            BenchmarkId::new("timeout_factorization", timeout_name),
-            &hard_numbers,
-            |b, numbers| {
-                b.iter(|| {
-                    for &n in numbers {
-                        // In a real implementation, you'd pass the timeout to the factorization function
-                        black_box(factor(black_box(n)));
-                    }
-                });
-            },
-        );
+    for (name, n) in &cases {
+        group.bench_with_input(BenchmarkId::new("factor_big", name), n, |b, n| {
+            b.iter(|| black_box(bigint::factor_big(black_box(n), None)));
+        });
     }
 
     group.finish();
@@ -399,50 +399,6 @@ fn generate_semiprimes_in_range(min: u64, max: u64, count: usize) -> Vec<u64> {
     semiprimes
 }
 
-/// Generate numbers that are hard to factor
-fn generate_hard_to_factor_numbers(count: usize) -> Vec<u64> {
-    let mut hard_numbers = Vec::with_capacity(count);
-
-    // Add some known hard cases
-    hard_numbers.extend_from_slice(&[
-        // Products of close primes
-        999983 * 1000003,
-        982451653 * 982451657,
-        // Carmichael numbers
-        561,
-        1105,
-        1729,
-        2465,
-        2821,
-        6601,
-        8911,
-        10585,
-        // Numbers with specific structure
-        2_u64.pow(31) - 1, // Mersenne number
-        2_u64.pow(32) + 1, // Fermat number
-    ]);
-
-    // Generate additional hard cases
-    let large_primes = sieve_range(1_000_000..10_000_000);
-    let mut rng = rand::thread_rng();
-
-    while hard_numbers.len() < count {
-        // Create products of large, close primes
-        let idx = rng.gen_range(0..large_primes.len() - 10);
-        let p1 = large_primes[idx];
-        let p2 = large_primes[idx + rng.gen_range(1..10)];
-
-        if let Some(product) = p1.checked_mul(p2) {
-            if product < u64::MAX / 1000 {
-                hard_numbers.push(product);
-            }
-        }
-    }
-
-    hard_numbers.truncate(count);
-    hard_numbers
-}
-
 /// Generate numbers with many factors
 fn generate_numbers_with_many_factors(count: usize) -> Vec<u64> {
     let mut numbers = Vec::with_capacity(count);
@@ -507,7 +463,7 @@ criterion_group!(
     bench_single_number_factorization,
     bench_factorization_success_rate,
     bench_parallel_factorization,
-    bench_factorization_with_timeout,
+    bench_big_number_factorization,
     bench_factorization_memory
 );
 criterion_main!(benches);

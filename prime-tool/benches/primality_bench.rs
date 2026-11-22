@@ -10,11 +10,14 @@ fn bench_primality_by_size(c: &mut Criterion) {
 
     // Test different number ranges
     let test_cases = vec![
-        ("small", generate_test_numbers(100, 1000)),
-        ("medium", generate_test_numbers(1_000_000, 100_000_000)),
+        ("small", generate_test_numbers(1000, 100, 1000)),
+        (
+            "medium",
+            generate_test_numbers(1000, 1_000_000, 100_000_000),
+        ),
         (
             "large",
-            generate_test_numbers(1_000_000_000, u64::MAX / 1000),
+            generate_test_numbers(1000, 1_000_000_000, u64::MAX / 1000),
         ),
     ];
 
@@ -41,7 +44,7 @@ fn bench_primality_by_size(c: &mut Criterion) {
 fn bench_primality_algorithms(c: &mut Criterion) {
     let mut group = c.benchmark_group("primality_algorithms");
 
-    let test_numbers = generate_test_numbers(1000, 1_000_000);
+    let test_numbers = generate_test_numbers(1000, 1000, 1_000_000);
     group.throughput(Throughput::Elements(test_numbers.len() as u64));
 
     // Adaptive algorithm (default)
@@ -182,8 +185,10 @@ fn bench_single_number_latency(c: &mut Criterion) {
         ("medium_prime", 999983),
         ("large_prime", 982451653),
         ("small_composite", 1001),
-        ("medium_composite", 999984),
-        ("large_composite", 982451654),
+        // Odd and not divisible by 3, so is_prime must run Miller-Rabin
+        // (even numbers return on the first divisibility check).
+        ("medium_composite", 999997),   // 757 × 1321
+        ("large_composite", 980503933), // 31307 × 31319
     ];
 
     for (name, number) in test_cases {
@@ -202,8 +207,7 @@ fn bench_scaling_performance(c: &mut Criterion) {
     let sizes = vec![10, 100, 1000, 10000];
 
     for size in sizes {
-        let numbers = generate_test_numbers(1000, 100_000);
-        let sample: Vec<u64> = numbers.into_iter().take(size).collect();
+        let sample = generate_test_numbers(size, 1000, 100_000);
 
         group.throughput(Throughput::Elements(sample.len() as u64));
 
@@ -224,15 +228,9 @@ fn bench_scaling_performance(c: &mut Criterion) {
 }
 
 /// Generate test numbers in a given range
-fn generate_test_numbers(min: u64, max: u64) -> Vec<u64> {
+fn generate_test_numbers(count: usize, min: u64, max: u64) -> Vec<u64> {
     let mut rng = rand::thread_rng();
-    let mut numbers = Vec::with_capacity(1000);
-
-    for _ in 0..1000 {
-        numbers.push(rng.gen_range(min..=max));
-    }
-
-    numbers
+    (0..count).map(|_| rng.gen_range(min..=max)).collect()
 }
 
 /// Generate known composite numbers
