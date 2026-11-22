@@ -10,6 +10,8 @@ path = "src/main.rs"
 
 [dependencies]
 prime-tool = { path = "../prime-tool" }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 rayon = { workspace = true }

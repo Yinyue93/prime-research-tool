@@ -4,10 +4,11 @@
 //! advanced algorithms, parallel processing, and visualization capabilities.
 
 use clap::{Parser, Subcommand};
+use num_bigint::BigUint;
 use prime_tool::*;
 use std::ops::Range;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 mod output;
 mod plotting;
@@ -45,16 +46,21 @@ struct Cli {
 enum Commands {
     /// Test if a number is prime
     IsPrime {
-        /// Number to test
+        /// Number to test (any size; above ~3.3e24 the result is a probable prime)
         #[arg(short, long)]
-        number: u64,
+        number: BigUint,
     },
     
     /// Factor a number into prime components
     Factor {
-        /// Number to factor
+        /// Number to factor (any size)
         #[arg(short, long)]
-        number: u64,
+        number: BigUint,
+
+        /// Give up on composite cofactors after this many seconds (0 = no limit).
+        /// Only applies to numbers larger than 64 bits.
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
     },
     
     /// Find all primes in a range
@@ -192,20 +198,28 @@ async fn main() -> anyhow::Result<()> {
     
     match cli.command {
         Commands::IsPrime { number } => {
-            let result = is_prime(number);
+            // primality_big uses the fast deterministic u64 path when the number fits
+            let result = bigint::primality_big(&number);
             let output = PrimalityOutput {
                 number,
-                is_prime: result,
+                is_prime: result.is_prime(),
+                certainty: Certainty::from_proven(result.is_proven()),
                 execution_time_ms: start_time.elapsed().as_millis() as u64,
             };
             print_output(&output, &cli.format, cli.output.as_ref().map(|v| &**v))?;
         }
         
-        Commands::Factor { number } => {
-            let factors = factor(number);
+        Commands::Factor { number, timeout } => {
+            let deadline = (timeout > 0).then(|| start_time + Duration::from_secs(timeout));
+            // factor_big uses the u64 factorizer directly when the number fits
+            let result = bigint::factor_big(&number, deadline);
             let output = FactorizationOutput {
                 number,
-                factors,
+                complete: result.is_complete(),
+                certainty: Certainty::from_proven(result.proven),
+                factors: result.factors,
+                unfactored: result.unfactored,
+                timeout_secs: timeout,
                 execution_time_ms: start_time.elapsed().as_millis() as u64,
             };
             print_output(&output, &cli.format, cli.output.as_ref().map(|v| &**v))?;

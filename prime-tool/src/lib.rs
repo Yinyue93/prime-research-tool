@@ -25,6 +25,7 @@
 //! ```
 
 pub mod algorithms;
+pub mod bigint;
 pub mod factorization;
 pub mod sieve;
 pub mod gaps;
