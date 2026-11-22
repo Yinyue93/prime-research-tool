@@ -237,6 +237,21 @@ fn bench_distributed_sieve_coordination(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         let coordinator = distributed::DistributedCoordinator::new(30);
+                        // distribute_sieve runs one local worker per registered node
+                        for i in 0..workers {
+                            coordinator
+                                .register_node(distributed::NodeInfo {
+                                    id: format!("node_{}", i),
+                                    address: format!("127.0.0.1:{}", 8000 + i),
+                                    cpu_cores: 4,
+                                    memory_gb: 8.0,
+                                    load_factor: 0.0,
+                                    last_heartbeat: 0,
+                                    capabilities: vec![],
+                                })
+                                .await
+                                .unwrap();
+                        }
                         let chunk_size = range_size / workers as u64;
                         let result = black_box(
                             coordinator
@@ -246,10 +261,7 @@ fn bench_distributed_sieve_coordination(c: &mut Criterion) {
                                 )
                                 .await,
                         );
-                        match result {
-                            Ok(primes) => black_box(primes.len()),
-                            Err(_) => black_box(0),
-                        };
+                        black_box(result.expect("distributed sieve failed").len());
                     });
                 });
             },

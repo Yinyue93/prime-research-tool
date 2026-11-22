@@ -1,16 +1,19 @@
 //! Distributed computing support for prime research
 //!
-//! This module provides functionality for coordinating prime research tasks
-//! across multiple network nodes using Tokio for async communication.
+//! This module provides a work-queue coordinator for splitting prime research
+//! tasks across nodes. There is no network transport yet: in
+//! [`DistributedCoordinator::distribute_sieve`] each registered node is run as
+//! a local worker task (see [`LocalExecutor`]).
 
 use crate::error::{PrimeError, Result};
 use crate::sieve::sieve_range;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
-use tokio::time::Duration;
+use tokio::sync::{Mutex, Notify, RwLock};
+use tokio::time::{Duration, Instant};
 
 /// Work unit for distributed computation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,25 +64,50 @@ pub struct NodeInfo {
     pub capabilities: Vec<TaskType>,
 }
 
-/// Distributed coordinator for managing work across nodes
+/// Work that has been handed to a node, with the time it was assigned
+#[derive(Debug, Clone)]
+struct PendingWork {
+    work: WorkUnit,
+    assigned_at: Instant,
+}
+
+/// Distributed coordinator for managing work across nodes.
+///
+/// Cloning is cheap and yields a handle to the same shared state.
+#[derive(Clone)]
 pub struct DistributedCoordinator {
     nodes: Arc<RwLock<HashMap<String, NodeInfo>>>,
     work_queue: Arc<Mutex<Vec<WorkUnit>>>,
-    pending_work: Arc<RwLock<HashMap<String, WorkUnit>>>,
+    pending_work: Arc<RwLock<HashMap<String, PendingWork>>>,
     completed_work: Arc<Mutex<Vec<WorkResult>>>,
+    /// Signalled whenever a result is submitted, so waiters wake immediately
+    result_submitted: Arc<Notify>,
     node_timeout: Duration,
+    completion_timeout: Duration,
 }
 
 impl DistributedCoordinator {
-    /// Create a new distributed coordinator
+    /// Create a new distributed coordinator.
+    ///
+    /// Work assigned to a node is requeued if it is not completed within
+    /// `node_timeout_seconds`.
     pub fn new(node_timeout_seconds: u64) -> Self {
         Self {
             nodes: Arc::new(RwLock::new(HashMap::new())),
             work_queue: Arc::new(Mutex::new(Vec::new())),
             pending_work: Arc::new(RwLock::new(HashMap::new())),
             completed_work: Arc::new(Mutex::new(Vec::new())),
+            result_submitted: Arc::new(Notify::new()),
             node_timeout: Duration::from_secs(node_timeout_seconds),
+            completion_timeout: Duration::from_secs(300),
         }
+    }
+
+    /// Set the maximum time [`distribute_sieve`](Self::distribute_sieve)
+    /// waits for all work to finish (default 300 s).
+    pub fn with_completion_timeout(mut self, timeout: Duration) -> Self {
+        self.completion_timeout = timeout;
+        self
     }
 
     /// Register a new node
@@ -124,9 +152,15 @@ impl DistributedCoordinator {
         if let Some(index) = work_index {
             let work = queue.remove(index);
 
-            // Move to pending
+            // Move to pending, recording when it was assigned
             let mut pending = self.pending_work.write().await;
-            pending.insert(work.id.clone(), work.clone());
+            pending.insert(
+                work.id.clone(),
+                PendingWork {
+                    work: work.clone(),
+                    assigned_at: Instant::now(),
+                },
+            );
 
             log::info!("Assigned work {} to node {}", work.id, node_id);
             Ok(Some(work))
@@ -144,6 +178,9 @@ impl DistributedCoordinator {
         // Add to completed
         let mut completed = self.completed_work.lock().await;
         completed.push(result.clone());
+        drop(completed);
+        drop(pending);
+        self.result_submitted.notify_waiters();
 
         log::info!(
             "Received result for work {} from node {}",
@@ -154,8 +191,24 @@ impl DistributedCoordinator {
         Ok(())
     }
 
-    /// Distribute prime sieving across nodes
+    /// Distribute prime sieving across the registered nodes.
+    ///
+    /// The range is split into `chunk_size` work units. Each registered node is
+    /// run as a local worker task that pulls work from the queue, executes it
+    /// with [`LocalExecutor`] on a blocking thread and submits the result.
+    /// Returns the sorted primes, or an error if no nodes are registered or the
+    /// work does not finish within the completion timeout.
     pub async fn distribute_sieve(&self, range: Range<u64>, chunk_size: u64) -> Result<Vec<u64>> {
+        let node_ids: Vec<String> = self.nodes.read().await.keys().cloned().collect();
+        if node_ids.is_empty() {
+            return Err(PrimeError::network_error(
+                "No nodes registered; cannot distribute work",
+            ));
+        }
+        if range.start >= range.end {
+            return Ok(Vec::new());
+        }
+        let chunk_size = chunk_size.max(1);
         let total_range = range.end - range.start;
         let num_chunks = total_range.div_ceil(chunk_size);
 
@@ -178,35 +231,65 @@ impl DistributedCoordinator {
         }
 
         // Submit all work
+        let work_ids: HashSet<String> = work_units.iter().map(|w| w.id.clone()).collect();
         for work in work_units {
             self.submit_work(work).await?;
         }
 
-        // Wait for completion and collect results
-        self.wait_for_completion().await
+        // Run one local worker per registered node
+        let workers: Vec<_> = node_ids
+            .into_iter()
+            .map(|node_id| tokio::spawn(self.clone().run_local_worker(node_id)))
+            .collect();
+
+        let result = self.wait_for_completion(&work_ids).await;
+        for worker in workers {
+            worker.abort();
+        }
+        result
     }
 
-    /// Wait for all pending work to complete
-    async fn wait_for_completion(&self) -> Result<Vec<u64>> {
-        let mut all_primes = Vec::new();
-        let check_interval = Duration::from_millis(100);
-        let max_wait = Duration::from_secs(300); // 5 minutes max
+    /// Pull and execute work as `node_id` until the queue has no work it can take.
+    async fn run_local_worker(self, node_id: String) -> Result<()> {
+        let executor = Arc::new(LocalExecutor::new(node_id.clone()));
+        while let Some(work) = self.get_work(&node_id).await? {
+            let executor = Arc::clone(&executor);
+            let result = tokio::task::spawn_blocking(move || executor.execute(work))
+                .await
+                .map_err(|e| PrimeError::network_error(format!("worker task failed: {}", e)))?;
+            self.submit_result(result).await?;
+        }
+        Ok(())
+    }
 
-        let start_time = tokio::time::Instant::now();
+    /// Wait until every unit in `work_ids` has a result, then return the
+    /// merged, sorted primes. Results are removed from the completed list.
+    async fn wait_for_completion(&self, work_ids: &HashSet<String>) -> Result<Vec<u64>> {
+        let mut all_primes = Vec::new();
+        // Waiters are woken by submit_result; the interval only bounds how
+        // often timed-out work is checked for.
+        let check_interval = Duration::from_millis(100);
+        let max_wait = self.completion_timeout;
+
+        let start_time = Instant::now();
 
         loop {
+            // Created before checking, so a result submitted in between still
+            // wakes us (notify_waiters reaches futures that already exist).
+            let notified = self.result_submitted.notified();
+
             // Check if all work is done
-            let pending_count = {
-                let pending = self.pending_work.read().await;
-                pending.len()
+            let done = {
+                let completed = self.completed_work.lock().await;
+                let finished: HashSet<&str> = completed
+                    .iter()
+                    .filter(|r| work_ids.contains(&r.work_id))
+                    .map(|r| r.work_id.as_str())
+                    .collect();
+                finished.len() == work_ids.len()
             };
 
-            let queue_count = {
-                let queue = self.work_queue.lock().await;
-                queue.len()
-            };
-
-            if pending_count == 0 && queue_count == 0 {
+            if done {
                 break;
             }
 
@@ -218,16 +301,35 @@ impl DistributedCoordinator {
             // Reassign timed-out work
             self.handle_timeouts().await?;
 
-            tokio::time::sleep(check_interval).await;
+            let _ = tokio::time::timeout(check_interval, notified).await;
         }
 
-        // Collect all results
-        let completed = self.completed_work.lock().await;
-        for result in completed.iter() {
-            if let TaskResult::Primes(primes) = &result.result {
-                all_primes.extend(primes);
+        // Drop leftover copies of this call's units: a unit that timed out and
+        // was requeued may still be queued or pending after the original finished.
+        self.work_queue
+            .lock()
+            .await
+            .retain(|w| !work_ids.contains(&w.id));
+        self.pending_work
+            .write()
+            .await
+            .retain(|id, _| !work_ids.contains(id));
+
+        // Collect this call's results (once per work unit: a requeued unit
+        // can complete twice) and leave other results in place.
+        let mut completed = self.completed_work.lock().await;
+        let mut seen = HashSet::new();
+        completed.retain(|result| {
+            if !work_ids.contains(&result.work_id) {
+                return true;
             }
-        }
+            if seen.insert(result.work_id.clone()) {
+                if let TaskResult::Primes(primes) = &result.result {
+                    all_primes.extend(primes);
+                }
+            }
+            false
+        });
 
         all_primes.sort_unstable();
         Ok(all_primes)
@@ -239,15 +341,10 @@ impl DistributedCoordinator {
 
         {
             let mut pending = self.pending_work.write().await;
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
-
-            pending.retain(|_, work| {
-                let elapsed = now.saturating_sub(work.estimated_duration_ms);
-                if elapsed > self.node_timeout.as_millis() as u64 {
-                    timed_out_work.push(work.clone());
+            pending.retain(|_, pending_work| {
+                // Time since this unit was handed to a node
+                if pending_work.assigned_at.elapsed() > self.node_timeout {
+                    timed_out_work.push(pending_work.work.clone());
                     false
                 } else {
                     true
@@ -358,7 +455,13 @@ impl LocalExecutor {
 
     /// Execute a work unit locally
     pub async fn execute_work(&self, work: WorkUnit) -> Result<WorkResult> {
-        let start_time = tokio::time::Instant::now();
+        Ok(self.execute(work))
+    }
+
+    /// Execute a work unit on the current thread (CPU-bound; call from a
+    /// blocking context such as `tokio::task::spawn_blocking`).
+    pub fn execute(&self, work: WorkUnit) -> WorkResult {
+        let start_time = std::time::Instant::now();
 
         let result = match work.task {
             TaskType::PrimeSieve { range } => {
@@ -384,13 +487,13 @@ impl LocalExecutor {
 
         let execution_time = start_time.elapsed().as_millis() as u64;
 
-        Ok(WorkResult {
+        WorkResult {
             work_id: work.id,
             node_id: self.node_id.clone(),
             result,
             execution_time_ms: execution_time,
             error: None,
-        })
+        }
     }
 }
 
@@ -428,6 +531,92 @@ mod tests {
 
         let assigned_work = coordinator.get_work("test_node").await.unwrap();
         assert!(assigned_work.is_some());
+    }
+
+    fn node(id: &str) -> NodeInfo {
+        NodeInfo {
+            id: id.to_string(),
+            address: "127.0.0.1:0".to_string(),
+            cpu_cores: 4,
+            memory_gb: 8.0,
+            load_factor: 0.0,
+            last_heartbeat: 0,
+            capabilities: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn test_distribute_sieve_completes_and_matches_local() {
+        let coordinator =
+            DistributedCoordinator::new(30).with_completion_timeout(Duration::from_secs(20));
+        for i in 0..4 {
+            coordinator
+                .register_node(node(&format!("node_{}", i)))
+                .await
+                .unwrap();
+        }
+        let primes = coordinator
+            .distribute_sieve(1..100_000, 7_000)
+            .await
+            .unwrap();
+        assert_eq!(primes, sieve_range(1..100_000));
+
+        // A second call on the same coordinator returns only its own results
+        let primes = coordinator.distribute_sieve(1..1_000, 100).await.unwrap();
+        assert_eq!(primes, sieve_range(1..1_000));
+
+        let stats = coordinator.get_cluster_stats().await;
+        assert_eq!(
+            (stats.pending_work, stats.queued_work, stats.completed_work),
+            (0, 0, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_distribute_sieve_without_nodes_errors() {
+        let coordinator = DistributedCoordinator::new(30);
+        assert!(coordinator.distribute_sieve(1..1_000, 100).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_timed_out_work_is_requeued() {
+        let coordinator = DistributedCoordinator::new(0);
+        coordinator.register_node(node("slow")).await.unwrap();
+        coordinator
+            .submit_work(WorkUnit {
+                id: "w".to_string(),
+                task: TaskType::PrimeSieve { range: 1..10 },
+                priority: 1,
+                estimated_duration_ms: 10_000_000,
+            })
+            .await
+            .unwrap();
+        assert!(coordinator.get_work("slow").await.unwrap().is_some());
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        coordinator.handle_timeouts().await.unwrap();
+        let stats = coordinator.get_cluster_stats().await;
+        assert_eq!((stats.pending_work, stats.queued_work), (0, 1));
+    }
+
+    #[tokio::test]
+    async fn test_recent_work_is_not_requeued() {
+        // Regression: the old check compared "now - estimated_duration_ms"
+        // (an epoch timestamp) to the timeout, so all work looked timed out.
+        let coordinator = DistributedCoordinator::new(30);
+        coordinator.register_node(node("n")).await.unwrap();
+        coordinator
+            .submit_work(WorkUnit {
+                id: "w".to_string(),
+                task: TaskType::PrimeSieve { range: 1..10 },
+                priority: 1,
+                estimated_duration_ms: 10,
+            })
+            .await
+            .unwrap();
+        coordinator.get_work("n").await.unwrap();
+        coordinator.handle_timeouts().await.unwrap();
+        let stats = coordinator.get_cluster_stats().await;
+        assert_eq!((stats.pending_work, stats.queued_work), (1, 0));
     }
 
     #[tokio::test]
