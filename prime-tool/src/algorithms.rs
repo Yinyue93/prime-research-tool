@@ -1,31 +1,33 @@
 //! Primality testing algorithms
 //!
-//! This module implements deterministic primality tests up to 2^64 using
-//! adaptive Miller-Rabin with Baillie-PSW fallback.
+//! This module implements deterministic primality tests for all u64 using
+//! Miller-Rabin with range-specific witness sets, plus an independent
+//! Baillie-PSW implementation.
 
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
+/// Deterministic Miller-Rabin witness sets: `(bound, witnesses)` means the
+/// witnesses are proven sufficient for every n < bound.
+///
+/// Must stay sorted by ascending bound: `miller_rabin_deterministic` uses the
+/// first entry whose bound exceeds n. That guarantees every witness is < n
+/// (each set's witnesses are far below the previous bound), which matters
+/// because `miller_rabin` skips witnesses >= n. E.g. [31, 73] applied to
+/// n = 25 would skip both witnesses and report 25 as prime.
+const MILLER_RABIN_WITNESSES: &[(u64, &[u64])] = &[
+    (2_047, &[2]),
+    (1_373_653, &[2, 3]),
+    (9_080_191, &[31, 73]),
+    (25_326_001, &[2, 3, 5]),
+    (3_215_031_751, &[2, 3, 5, 7]),
+    (4_759_123_141, &[2, 7, 61]),
+    (1_122_004_669_633, &[2, 13, 23, 1662803]),
+    (2_152_302_898_747, &[2, 3, 5, 7, 11]),
+    (3_474_749_660_383, &[2, 3, 5, 7, 11, 13]),
+    (341_550_071_728_321, &[2, 3, 5, 7, 11, 13, 17]),
+    (3_825_123_056_546_413_051, &[2, 3, 5, 7, 11, 13, 17, 19, 23]),
+];
 
-/// Deterministic witnesses for Miller-Rabin test for different ranges
-static MILLER_RABIN_WITNESSES: Lazy<HashMap<u64, Vec<u64>>> = Lazy::new(|| {
-    let mut map = HashMap::new();
-    map.insert(2_047, vec![2]);
-    map.insert(1_373_653, vec![2, 3]);
-    map.insert(9_080_191, vec![31, 73]);
-    map.insert(25_326_001, vec![2, 3, 5]);
-    map.insert(3_215_031_751, vec![2, 3, 5, 7]);
-    map.insert(4_759_123_141, vec![2, 7, 61]);
-    map.insert(1_122_004_669_633, vec![2, 13, 23, 1662803]);
-    map.insert(2_152_302_898_747, vec![2, 3, 5, 7, 11]);
-    map.insert(3_474_749_660_383, vec![2, 3, 5, 7, 11, 13]);
-    map.insert(341_550_071_728_321, vec![2, 3, 5, 7, 11, 13, 17]);
-    map.insert(
-        3_825_123_056_546_413_051,
-        vec![2, 3, 5, 7, 11, 13, 17, 19, 23],
-    );
-    map.insert(u64::MAX, vec![2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]);
-    map
-});
+/// The first 12 primes: deterministic for all n < 3.3e24, i.e. every u64.
+const MILLER_RABIN_WITNESSES_ALL_U64: &[u64] = &[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
 
 /// Check if a number is prime using adaptive algorithms
 ///
@@ -100,16 +102,12 @@ pub fn miller_rabin(n: u64, witnesses: &[u64]) -> bool {
     true
 }
 
-/// Deterministic Miller-Rabin using optimal witness sets
+/// Deterministic Miller-Rabin using the smallest proven witness set for n
 fn miller_rabin_deterministic(n: u64) -> bool {
-    for (&threshold, witnesses) in MILLER_RABIN_WITNESSES.iter() {
-        if n < threshold {
-            return miller_rabin(n, witnesses);
-        }
-    }
-
-    // Fallback to largest witness set
-    let witnesses = MILLER_RABIN_WITNESSES.get(&u64::MAX).unwrap();
+    let witnesses = MILLER_RABIN_WITNESSES
+        .iter()
+        .find(|&&(bound, _)| n < bound)
+        .map_or(MILLER_RABIN_WITNESSES_ALL_U64, |&(_, witnesses)| witnesses);
     miller_rabin(n, witnesses)
 }
 
@@ -311,6 +309,39 @@ mod tests {
         assert!(is_prime(999983));
         assert!(is_prime(1000003));
         assert!(is_prime(982451653));
+    }
+
+    #[test]
+    fn test_witness_table_sorted_and_witnesses_below_previous_bound() {
+        let mut prev_bound = 0;
+        for &(bound, witnesses) in MILLER_RABIN_WITNESSES {
+            assert!(bound > prev_bound, "table must be sorted by bound");
+            // Any n using this set is >= prev_bound, so every witness must be
+            // below it (otherwise miller_rabin would skip it). The first set
+            // ([2], used for n < 2047) is safe because is_prime handles n <= 3.
+            if prev_bound > 0 {
+                assert!(witnesses.iter().all(|&a| a < prev_bound));
+            }
+            prev_bound = bound;
+        }
+    }
+
+    #[test]
+    fn test_matches_trial_division_exhaustively() {
+        // Covers the first four witness-set ranges, including n = 25 which
+        // the old HashMap-ordered lookup could misclassify.
+        let naive = |n: u64| {
+            n >= 2
+                && (2..)
+                    .take_while(|d| d * d <= n)
+                    .all(|d| !n.is_multiple_of(d))
+        };
+        for n in 0..200_000u64 {
+            assert_eq!(is_prime(n), naive(n), "n = {}", n);
+        }
+        for n in (9_080_191 - 1000)..(9_080_191 + 1000) {
+            assert_eq!(is_prime(n), naive(n), "n = {}", n);
+        }
     }
 
     #[test]
