@@ -47,13 +47,9 @@ pub fn is_prime(n: u64) -> bool {
         return false;
     }
     
-    // Use deterministic Miller-Rabin for smaller numbers
-    if n <= 3_825_123_056_546_413_051 {
-        return miller_rabin_deterministic(n);
-    }
-    
-    // For very large numbers, use Baillie-PSW
-    baillie_psw(n)
+    // Deterministic Miller-Rabin covers the entire u64 range: the largest
+    // witness set (first 12 primes) is proven correct for all n < 3.3e24.
+    miller_rabin_deterministic(n)
 }
 
 /// Deterministic Miller-Rabin primality test
@@ -142,96 +138,105 @@ pub fn baillie_psw(n: u64) -> bool {
     lucas_test(n)
 }
 
-/// Lucas primality test component of Baillie-PSW
+/// Strong Lucas probable-prime test (Selfridge method A), the second half
+/// of Baillie-PSW. Runs in O(log n) using the doubling formulas, with all
+/// arithmetic done mod n in u128 to avoid overflow across the whole u64 range.
 fn lucas_test(n: u64) -> bool {
-    // Find the first D such that (D/n) = -1
-    let mut d = 5i64;
+    // Find the first D in 5, -7, 9, -11, ... with Jacobi symbol (D/n) = -1.
+    // Callers have already rejected perfect squares, so this terminates quickly.
+    let mut d: i64 = 5;
     loop {
-        let jacobi = jacobi_symbol(d, n as i64);
-        if jacobi == -1 {
-            break;
+        match jacobi_symbol(d, n) {
+            -1 => break,
+            0 if d.unsigned_abs() != n => return false, // nontrivial factor of n
+            _ => {}
         }
-        if jacobi == 0 {
-            return n == d.abs() as u64;
-        }
-        
         d = if d > 0 { -(d + 2) } else { -(d - 2) };
-        
-        if d.abs() > 1000 {
-            // Safety check to avoid infinite loop
-            return false;
+    }
+
+    let p: u64 = 1;
+    let q_mod = to_mod((1 - d) / 4, n);
+    let d_mod = to_mod(d, n);
+
+    // Write n + 1 = k * 2^s with k odd (n is odd and < 2^64, so use u128).
+    let np1 = n as u128 + 1;
+    let s = np1.trailing_zeros();
+    let k = np1 >> s;
+
+    // Compute U_k, V_k, Q^k mod n, scanning bits of k from the top.
+    let (mut u, mut v, mut qk) = (1u64, p % n, q_mod); // U_1, V_1, Q^1
+    for bit in (0..(128 - k.leading_zeros() - 1)).rev() {
+        // Doubling: U_2m = U_m V_m, V_2m = V_m^2 - 2 Q^m, Q^2m = (Q^m)^2
+        u = mod_mul(u, v, n);
+        v = mod_sub(mod_mul(v, v, n), mod_mul(2, qk, n), n);
+        qk = mod_mul(qk, qk, n);
+        if (k >> bit) & 1 == 1 {
+            // Increment: U_m+1 = (P U + V)/2, V_m+1 = (D U + P V)/2
+            let u_next = half_mod(mod_add(mod_mul(p, u, n), v, n), n);
+            let v_next = half_mod(mod_add(mod_mul(d_mod, u, n), mod_mul(p, v, n), n), n);
+            u = u_next;
+            v = v_next;
+            qk = mod_mul(qk, q_mod, n);
         }
     }
-    
-    let p = 1;
-    let q = (1 - d) / 4;
-    
-    lucas_sequence_test(n, p, q)
-}
 
-/// Lucas sequence test
-fn lucas_sequence_test(n: u64, p: i64, q: i64) -> bool {
-    let delta = (n + 1) as i64;
-    
-    // Simplified Lucas sequence computation
-    // This is a basic implementation - a full implementation would be more complex
-    let (u, _v) = lucas_sequence(delta, p, q, n);
-    
-    u == 0
-}
-
-/// Compute Lucas sequence U_k and V_k
-fn lucas_sequence(k: i64, p: i64, q: i64, n: u64) -> (u64, u64) {
-    if k == 0 {
-        return (0, 2);
-    }
-    if k == 1 {
-        return (1, p as u64 % n);
-    }
-    
-    let mut u_prev = 0u64;
-    let mut u_curr = 1u64;
-    let mut v_prev = 2u64;
-    let mut v_curr = p as u64 % n;
-    
-    for _ in 2..=k {
-        let u_next = (((p as u64) * u_curr) % n + n - ((q as u64) * u_prev) % n) % n;
-        let v_next = (((p as u64) * v_curr) % n + n - ((q as u64) * v_prev) % n) % n;
-        
-        u_prev = u_curr;
-        u_curr = u_next;
-        v_prev = v_curr;
-        v_curr = v_next;
-    }
-    
-    (u_curr, v_curr)
-}
-
-/// Check if a number is a perfect square
-fn is_perfect_square(n: u64) -> bool {
-    if n == 0 {
+    if u == 0 || v == 0 {
         return true;
     }
-    
-    let sqrt_n = (n as f64).sqrt() as u64;
-    sqrt_n * sqrt_n == n || (sqrt_n + 1) * (sqrt_n + 1) == n
+    for _ in 1..s {
+        v = mod_sub(mod_mul(v, v, n), mod_mul(2, qk, n), n);
+        if v == 0 {
+            return true;
+        }
+        qk = mod_mul(qk, qk, n);
+    }
+    false
 }
 
-/// Compute Jacobi symbol (a/n)
-fn jacobi_symbol(mut a: i64, mut n: i64) -> i8 {
-    if n <= 0 || n % 2 == 0 {
+/// Reduce a signed value into [0, n)
+fn to_mod(x: i64, n: u64) -> u64 {
+    (x as i128).rem_euclid(n as i128) as u64
+}
+
+fn mod_add(a: u64, b: u64, m: u64) -> u64 {
+    ((a as u128 + b as u128) % m as u128) as u64
+}
+
+fn mod_sub(a: u64, b: u64, m: u64) -> u64 {
+    ((a as u128 + m as u128 - b as u128) % m as u128) as u64
+}
+
+/// x / 2 mod m for odd m
+fn half_mod(x: u64, m: u64) -> u64 {
+    if x % 2 == 0 {
+        x / 2
+    } else {
+        ((x as u128 + m as u128) / 2) as u64
+    }
+}
+
+/// Check if a number is a perfect square (exact for all u64)
+fn is_perfect_square(n: u64) -> bool {
+    let mut r = (n as f64).sqrt() as u64;
+    // Correct floating-point error in either direction
+    while (r as u128) * (r as u128) > n as u128 {
+        r -= 1;
+    }
+    while ((r + 1) as u128) * ((r + 1) as u128) <= n as u128 {
+        r += 1;
+    }
+    (r as u128) * (r as u128) == n as u128
+}
+
+/// Compute the Jacobi symbol (a/n) for odd n > 0
+fn jacobi_symbol(a: i64, n: u64) -> i8 {
+    if n == 0 || n % 2 == 0 {
         return 0;
     }
-    
+    let mut a = to_mod(a, n);
+    let mut n = n;
     let mut result = 1i8;
-    
-    if a < 0 {
-        a = -a;
-        if n % 4 == 3 {
-            result = -result;
-        }
-    }
-    
+
     while a != 0 {
         while a % 2 == 0 {
             a /= 2;
@@ -239,21 +244,14 @@ fn jacobi_symbol(mut a: i64, mut n: i64) -> i8 {
                 result = -result;
             }
         }
-        
         std::mem::swap(&mut a, &mut n);
-        
         if a % 4 == 3 && n % 4 == 3 {
             result = -result;
         }
-        
         a %= n;
     }
-    
-    if n == 1 {
-        result
-    } else {
-        0
-    }
+
+    if n == 1 { result } else { 0 }
 }
 
 /// Modular exponentiation: (base^exp) mod m
@@ -307,11 +305,39 @@ mod tests {
         assert!(is_prime(1000003));
         assert!(is_prime(982451653));
     }
+
+    #[test]
+    fn test_primes_near_u64_max() {
+        // Above the old Baillie-PSW cutoff (3.8e18) and above 2^63
+        assert!(is_prime(9_223_372_036_854_775_783)); // largest prime < 2^63
+        assert!(is_prime(18_446_744_073_709_551_557)); // 2^64 - 59, largest u64 prime
+        assert!(is_prime(18_446_744_073_709_551_533));
+        assert!(!is_prime(18_446_744_073_709_551_559));
+        assert!(!is_prime(u64::MAX));
+        // 4294967291 * 4294967279: product of two large primes
+        assert!(!is_prime(4_294_967_291 * 4_294_967_279));
+    }
     
     #[test]
     fn test_miller_rabin() {
         assert!(miller_rabin(97, &[2]));
         assert!(!miller_rabin(91, &[2]));
+    }
+    
+    #[test]
+    fn test_baillie_psw_matches_miller_rabin() {
+        // Small range, exhaustively
+        for n in 0..20_000u64 {
+            assert_eq!(baillie_psw(n), is_prime(n), "mismatch at {}", n);
+        }
+        // Strong pseudoprimes to base 2 and Carmichael numbers must be rejected
+        for &c in &[2047u64, 3277, 4033, 561, 1105, 1729, 3_215_031_751, 3_825_123_056_546_413_051] {
+            assert!(!baillie_psw(c), "{} is composite", c);
+        }
+        // Large values near u64::MAX
+        for n in (u64::MAX - 2000)..=u64::MAX {
+            assert_eq!(baillie_psw(n), is_prime(n), "mismatch at {}", n);
+        }
     }
     
     #[test]
