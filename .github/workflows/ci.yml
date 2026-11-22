@@ -23,6 +23,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install system dependencies
+      # plotters needs fontconfig (via yeslogic-fontconfig-sys), absent on the runner image
+      run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
       with:
@@ -64,6 +68,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install system dependencies
+      # plotters needs fontconfig (via yeslogic-fontconfig-sys), absent on the runner image
+      run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
@@ -99,6 +107,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install system dependencies
+      # plotters needs fontconfig (via yeslogic-fontconfig-sys), absent on the runner image
+      run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
@@ -123,13 +135,18 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         files: lcov.info
-        fail_ci_if_error: true
+        # No CODECOV_TOKEN is configured; tokenless uploads can be rate-limited
+        fail_ci_if_error: false
 
   benchmark:
     name: Performance Benchmarks
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Install system dependencies
+      # plotters needs fontconfig (via yeslogic-fontconfig-sys), absent on the runner image
+      run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -169,6 +186,10 @@ jobs:
       with:
         toolchain: ${{ matrix.rust }}
     
+    - name: Install system dependencies
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+    
     - name: Cache dependencies
       uses: actions/cache@v3
       with:
@@ -190,6 +211,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install system dependencies
+      # plotters needs fontconfig (via yeslogic-fontconfig-sys), absent on the runner image
+      run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
     
@@ -203,25 +228,33 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     
     - name: Build CLI tool
-      run: cargo build --release --bin prime-tool-cli
+      run: cargo build --release --bin prime-tool
     
     - name: Test CLI functionality
       run: |
+        set -euo pipefail
+        BIN=./target/release/prime-tool
+    
         # Test primality checking
-        ./target/release/prime-tool-cli is-prime --n 999983
-        ./target/release/prime-tool-cli is-prime --n 999979
-        
+        $BIN -f plain is-prime -n 999983 | grep "is PRIME"
+        $BIN -f plain is-prime -n 1000000 | grep "is COMPOSITE"
+        $BIN -f plain is-prime -n 18446744073709551557 | grep "is PRIME"
+        $BIN -f plain is-prime -n 170141183460469231731687303715884105727 | grep "PROBABLE PRIME"
+    
         # Test factorization
-        ./target/release/prime-tool-cli factor --n 1234567
-        
+        $BIN -f plain factor -n 1234567 | grep "127 × 9721"
+        $BIN -f plain factor -n 132543035165161565106540654065014651303 | grep "31 × 26641 × 160488787189720386242573784604393"
+    
         # Test sieving
-        ./target/release/prime-tool-cli sieve --range 1..1000 --output json
-        
+        $BIN -f json -o primes.json sieve -r 1..1000
+        test -s primes.json
+    
         # Test gap analysis
-        ./target/release/prime-tool-cli gaps --range 1..1000 --twins
-        
+        $BIN gaps -r 1..1000 --twins
+    
         # Test plotting
-        ./target/release/prime-tool-cli plot --range 1..1000 --type prime-count --output test_plot.svg
+        $BIN plot -r 1..1000 -p prime-count -o test_plots
+        test -s test_plots/prime_count.svg
     
     - name: Test web service
       run: |
@@ -229,23 +262,28 @@ jobs:
         cargo build --release --bin prime-tool-web
         ./target/release/prime-tool-web &
         WEB_PID=$!
-        
+    
         # Wait for service to start
-        sleep 5
-        
+        curl -f --retry 30 --retry-connrefused --retry-delay 1 http://localhost:3000/health
+    
         # Test API endpoints
-        curl -f http://localhost:3000/health
         curl -f http://localhost:3000/prime/999983
         curl -f "http://localhost:3000/sieve?start=1&end=100"
-        
+    
         # Clean up
         kill $WEB_PID
 
   documentation:
     name: Documentation
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # deploy step pushes to the gh-pages branch
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Install system dependencies
+      # plotters needs fontconfig (via yeslogic-fontconfig-sys), absent on the runner image
+      run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -277,6 +315,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install system dependencies
+      # plotters needs fontconfig (via yeslogic-fontconfig-sys), absent on the runner image
+      run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
     
@@ -291,14 +333,14 @@ jobs:
     
     - name: Build release binaries
       run: |
-        cargo build --release --bin prime-tool-cli
+        cargo build --release --bin prime-tool
         cargo build --release --bin prime-tool-web
         cargo build --release --bin prime-tool-bench
     
     - name: Create release archive
       run: |
         mkdir -p release
-        cp target/release/prime-tool-cli release/
+        cp target/release/prime-tool release/
         cp target/release/prime-tool-web release/
         cp target/release/prime-tool-bench release/
         cp README.md release/
@@ -322,6 +364,10 @@ jobs:
       with:
         fetch-depth: 0
     
+    - name: Install system dependencies
+      # plotters needs fontconfig (via yeslogic-fontconfig-sys), absent on the runner image
+      run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
     
@@ -339,10 +385,10 @@ jobs:
         # Run benchmarks on current branch
         cd prime-tool
         cargo bench --bench primality_bench -- --save-baseline current
-        
+    
         # Switch to main branch and run benchmarks
         git checkout main
         cargo bench --bench primality_bench -- --save-baseline main
-        
+    
         # Compare results
         cargo bench --bench primality_bench -- --load-baseline main --baseline current
