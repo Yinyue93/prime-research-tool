@@ -162,7 +162,7 @@ pub fn analyze_gaps(range: Range<u64>) -> GapStatistics {
     // Calculate median
     let mut sorted_gaps = gap_sizes.clone();
     sorted_gaps.sort_unstable();
-    let median_gap = if sorted_gaps.len() % 2 == 0 {
+    let median_gap = if sorted_gaps.len().is_multiple_of(2) {
         let mid = sorted_gaps.len() / 2;
         (sorted_gaps[mid - 1] + sorted_gaps[mid]) as f64 / 2.0
     } else {

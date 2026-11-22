@@ -2,7 +2,6 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use prime_tool::*;
-use rayon::prelude::*;
 use std::ops::Range;
 
 /// Benchmark sieve algorithms by range size

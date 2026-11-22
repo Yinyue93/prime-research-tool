@@ -69,7 +69,7 @@ pub fn generate_prime_count_plot<P: AsRef<Path>>(
 
     let mut chart = ChartBuilder::on(&root)
         .caption(
-            &format!(
+            format!(
                 "Prime Counting Function π(x) for {}..{}",
                 range.start, range.end
             ),
@@ -100,12 +100,12 @@ pub fn generate_prime_count_plot<P: AsRef<Path>>(
     chart
         .draw_series(std::iter::once(Circle::new((0.0, 0.0), 0, BLUE.filled())))? // Dummy for legend
         .label("π(x)")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], &BLUE));
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], BLUE));
 
     chart
         .draw_series(std::iter::once(Circle::new((0.0, 0.0), 0, RED.filled())))? // Dummy for legend
         .label("x/ln(x) approximation")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], &RED));
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], RED));
 
     chart.configure_series_labels().draw()?;
 
@@ -191,7 +191,7 @@ pub fn generate_distribution_plot<P: AsRef<Path>>(
 
     let mut chart = ChartBuilder::on(&root)
         .caption(
-            &format!(
+            format!(
                 "Prime Density Distribution ({}..{})",
                 range.start, range.end
             ),
@@ -237,7 +237,7 @@ pub fn generate_gap_progression_plot<P: AsRef<Path>>(
 
     let mut chart = ChartBuilder::on(&root)
         .caption(
-            &format!("Prime Gap Progression ({}..{})", range.start, range.end),
+            format!("Prime Gap Progression ({}..{})", range.start, range.end),
             ("Arial", 30),
         )
         .margin(10)
@@ -272,7 +272,7 @@ pub fn generate_gap_progression_plot<P: AsRef<Path>>(
     chart
         .draw_series(std::iter::once(Circle::new((0, 0), 0, BLUE.filled())))? // Dummy for legend
         .label("Gap sizes")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], &BLUE));
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], BLUE));
 
     chart
         .draw_series(std::iter::once(Circle::new((0, 0), 0, RED.filled())))? // Dummy for legend

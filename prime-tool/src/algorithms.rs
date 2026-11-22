@@ -46,7 +46,7 @@ pub fn is_prime(n: u64) -> bool {
     if n == 2 || n == 3 {
         return true;
     }
-    if n % 2 == 0 || n % 3 == 0 {
+    if n.is_multiple_of(2) || n.is_multiple_of(3) {
         return false;
     }
 
@@ -65,14 +65,14 @@ pub fn miller_rabin(n: u64, witnesses: &[u64]) -> bool {
     if n == 2 {
         return true;
     }
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return false;
     }
 
     // Write n-1 as d * 2^r
     let mut d = n - 1;
     let mut r = 0;
-    while d % 2 == 0 {
+    while d.is_multiple_of(2) {
         d /= 2;
         r += 1;
     }
@@ -123,7 +123,7 @@ pub fn baillie_psw(n: u64) -> bool {
     if n == 2 {
         return true;
     }
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return false;
     }
 
@@ -211,7 +211,7 @@ fn mod_sub(a: u64, b: u64, m: u64) -> u64 {
 
 /// x / 2 mod m for odd m
 fn half_mod(x: u64, m: u64) -> u64 {
-    if x % 2 == 0 {
+    if x.is_multiple_of(2) {
         x / 2
     } else {
         ((x as u128 + m as u128) / 2) as u64
@@ -233,7 +233,7 @@ fn is_perfect_square(n: u64) -> bool {
 
 /// Compute the Jacobi symbol (a/n) for odd n > 0
 fn jacobi_symbol(a: i64, n: u64) -> i8 {
-    if n == 0 || n % 2 == 0 {
+    if n == 0 || n.is_multiple_of(2) {
         return 0;
     }
     let mut a = to_mod(a, n);
@@ -241,7 +241,7 @@ fn jacobi_symbol(a: i64, n: u64) -> i8 {
     let mut result = 1i8;
 
     while a != 0 {
-        while a % 2 == 0 {
+        while a.is_multiple_of(2) {
             a /= 2;
             if n % 8 == 3 || n % 8 == 5 {
                 result = -result;

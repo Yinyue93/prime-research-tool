@@ -134,7 +134,7 @@ impl OutputDisplay for PrimalityOutput {
 
         table.add_row(vec![
             Cell::new("Number").add_attribute(Attribute::Bold),
-            Cell::new(&self.number.to_string()),
+            Cell::new(self.number.to_string()),
         ]);
 
         let is_prime_cell = if self.is_prime {
@@ -161,7 +161,7 @@ impl OutputDisplay for PrimalityOutput {
 
         table.add_row(vec![
             Cell::new("Execution Time").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{} ms", self.execution_time_ms)),
+            Cell::new(format!("{} ms", self.execution_time_ms)),
         ]);
 
         table.to_string()
@@ -169,8 +169,8 @@ impl OutputDisplay for PrimalityOutput {
 
     fn format_csv(&self) -> anyhow::Result<String> {
         let mut wtr = csv::Writer::from_writer(vec![]);
-        wtr.write_record(&["number", "is_prime", "execution_time_ms", "certainty"])?;
-        wtr.write_record(&[
+        wtr.write_record(["number", "is_prime", "execution_time_ms", "certainty"])?;
+        wtr.write_record([
             &self.number.to_string(),
             &self.is_prime.to_string(),
             &self.execution_time_ms.to_string(),
@@ -253,12 +253,12 @@ impl OutputDisplay for FactorizationOutput {
 
         table.add_row(vec![
             Cell::new("Number").add_attribute(Attribute::Bold),
-            Cell::new(&self.number.to_string()),
+            Cell::new(self.number.to_string()),
         ]);
 
         table.add_row(vec![
             Cell::new("Factorization").add_attribute(Attribute::Bold),
-            Cell::new(&self.factorization_str()),
+            Cell::new(self.factorization_str()),
         ]);
 
         for note in self.notes() {
@@ -270,7 +270,7 @@ impl OutputDisplay for FactorizationOutput {
 
         table.add_row(vec![
             Cell::new("Execution Time").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{} ms", self.execution_time_ms)),
+            Cell::new(format!("{} ms", self.execution_time_ms)),
         ]);
 
         table.to_string()
@@ -287,7 +287,7 @@ impl OutputDisplay for FactorizationOutput {
                     .join(", ")
             )
         };
-        wtr.write_record(&[
+        wtr.write_record([
             "number",
             "factors",
             "execution_time_ms",
@@ -295,7 +295,7 @@ impl OutputDisplay for FactorizationOutput {
             "complete",
             "certainty",
         ])?;
-        wtr.write_record(&[
+        wtr.write_record([
             &self.number.to_string(),
             &list(&self.factors),
             &self.execution_time_ms.to_string(),
@@ -324,23 +324,23 @@ impl OutputDisplay for SieveOutput {
 
         table.add_row(vec![
             Cell::new("Range").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{}..{}", self.range_start, self.range_end)),
+            Cell::new(format!("{}..{}", self.range_start, self.range_end)),
         ]);
 
         table.add_row(vec![
             Cell::new("Primes Found").add_attribute(Attribute::Bold),
-            Cell::new(&self.primes.len().to_string()).fg(Color::Green),
+            Cell::new(self.primes.len().to_string()).fg(Color::Green),
         ]);
 
         table.add_row(vec![
             Cell::new("Execution Time").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{} ms", self.execution_time_ms)),
+            Cell::new(format!("{} ms", self.execution_time_ms)),
         ]);
 
         if self.primes.len() <= 100 {
             table.add_row(vec![
                 Cell::new("Primes").add_attribute(Attribute::Bold),
-                Cell::new(&format!("{:?}", self.primes)),
+                Cell::new(format!("{:?}", self.primes)),
             ]);
         } else {
             let first_10: Vec<String> =
@@ -355,11 +355,11 @@ impl OutputDisplay for SieveOutput {
                 .collect();
             table.add_row(vec![
                 Cell::new("First 10 Primes").add_attribute(Attribute::Bold),
-                Cell::new(&first_10.join(", ")),
+                Cell::new(first_10.join(", ")),
             ]);
             table.add_row(vec![
                 Cell::new("Last 10 Primes").add_attribute(Attribute::Bold),
-                Cell::new(&last_10.join(", ")),
+                Cell::new(last_10.join(", ")),
             ]);
         }
 
@@ -368,9 +368,9 @@ impl OutputDisplay for SieveOutput {
 
     fn format_csv(&self) -> anyhow::Result<String> {
         let mut wtr = csv::Writer::from_writer(vec![]);
-        wtr.write_record(&["prime"])?;
+        wtr.write_record(["prime"])?;
         for &prime in &self.primes {
-            wtr.write_record(&[&prime.to_string()])?;
+            wtr.write_record([&prime.to_string()])?;
         }
         Ok(String::from_utf8(wtr.into_inner()?)?)
     }
@@ -412,52 +412,52 @@ impl OutputDisplay for GapAnalysisOutput {
 
         table.add_row(vec![
             Cell::new("Range").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{}..{}", self.range_start, self.range_end)),
+            Cell::new(format!("{}..{}", self.range_start, self.range_end)),
         ]);
 
         table.add_row(vec![
             Cell::new("Total Gaps").add_attribute(Attribute::Bold),
-            Cell::new(&self.statistics.total_gaps.to_string()),
+            Cell::new(self.statistics.total_gaps.to_string()),
         ]);
 
         table.add_row(vec![
             Cell::new("Min Gap").add_attribute(Attribute::Bold),
-            Cell::new(&self.statistics.min_gap.to_string()),
+            Cell::new(self.statistics.min_gap.to_string()),
         ]);
 
         table.add_row(vec![
             Cell::new("Max Gap").add_attribute(Attribute::Bold),
-            Cell::new(&self.statistics.max_gap.to_string()).fg(Color::Red),
+            Cell::new(self.statistics.max_gap.to_string()).fg(Color::Red),
         ]);
 
         table.add_row(vec![
             Cell::new("Average Gap").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{:.2}", self.statistics.average_gap)),
+            Cell::new(format!("{:.2}", self.statistics.average_gap)),
         ]);
 
         table.add_row(vec![
             Cell::new("Median Gap").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{:.2}", self.statistics.median_gap)),
+            Cell::new(format!("{:.2}", self.statistics.median_gap)),
         ]);
 
         table.add_row(vec![
             Cell::new("Twin Primes").add_attribute(Attribute::Bold),
-            Cell::new(&self.statistics.twin_prime_count.to_string()).fg(Color::Green),
+            Cell::new(self.statistics.twin_prime_count.to_string()).fg(Color::Green),
         ]);
 
         table.add_row(vec![
             Cell::new("Cousin Primes").add_attribute(Attribute::Bold),
-            Cell::new(&self.statistics.cousin_prime_count.to_string()).fg(Color::Blue),
+            Cell::new(self.statistics.cousin_prime_count.to_string()).fg(Color::Blue),
         ]);
 
         table.add_row(vec![
             Cell::new("Sexy Primes").add_attribute(Attribute::Bold),
-            Cell::new(&self.statistics.sexy_prime_count.to_string()).fg(Color::Magenta),
+            Cell::new(self.statistics.sexy_prime_count.to_string()).fg(Color::Magenta),
         ]);
 
         table.add_row(vec![
             Cell::new("Execution Time").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{} ms", self.execution_time_ms)),
+            Cell::new(format!("{} ms", self.execution_time_ms)),
         ]);
 
         // Add gap histogram summary
@@ -484,7 +484,7 @@ impl OutputDisplay for GapAnalysisOutput {
         let mut wtr = csv::Writer::from_writer(vec![]);
 
         // Write statistics
-        wtr.write_record(&[
+        wtr.write_record([
             "range_start",
             "range_end",
             "total_gaps",
@@ -498,7 +498,7 @@ impl OutputDisplay for GapAnalysisOutput {
             "execution_time_ms",
         ])?;
 
-        wtr.write_record(&[
+        wtr.write_record([
             &self.range_start.to_string(),
             &self.range_end.to_string(),
             &self.statistics.total_gaps.to_string(),

@@ -10,7 +10,6 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use chrono;
 use prime_tool::*;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -20,7 +19,6 @@ use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{info, warn};
-use tracing_subscriber;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -269,11 +267,8 @@ async fn check_prime(
 
     match tokio::task::spawn_blocking(move || {
         let is_prime_result = is_prime(number);
-        let algorithm = if number <= u64::MAX {
-            "Miller-Rabin"
-        } else {
-            "Baillie-PSW"
-        };
+        // is_prime uses deterministic Miller-Rabin for every u64
+        let algorithm = "Miller-Rabin";
 
         PrimalityResponse {
             number,
@@ -320,11 +315,8 @@ async fn check_prime_batch(
             .into_iter()
             .map(|number| {
                 let is_prime_result = is_prime(number);
-                let algorithm = if number <= u64::MAX {
-                    "Miller-Rabin"
-                } else {
-                    "Baillie-PSW"
-                };
+                // is_prime uses deterministic Miller-Rabin for every u64
+                let algorithm = "Miller-Rabin";
 
                 PrimalityResponse {
                     number,

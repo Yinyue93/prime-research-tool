@@ -325,18 +325,18 @@ fn display_benchmark_results(results: &HashMap<String, Duration>, iterations: us
         let ops_per_sec = 1_000_000_000.0 / avg_ns;
 
         let avg_cell = if avg_ns < 1000.0 {
-            Cell::new(&format!("{:.0} ns", avg_ns)).fg(Color::Green)
+            Cell::new(format!("{:.0} ns", avg_ns)).fg(Color::Green)
         } else if avg_ns < 1_000_000.0 {
-            Cell::new(&format!("{:.2} μs", avg_ns / 1000.0)).fg(Color::Yellow)
+            Cell::new(format!("{:.2} μs", avg_ns / 1000.0)).fg(Color::Yellow)
         } else {
-            Cell::new(&format!("{:.2} ms", avg_ns / 1_000_000.0)).fg(Color::Red)
+            Cell::new(format!("{:.2} ms", avg_ns / 1_000_000.0)).fg(Color::Red)
         };
 
         table.add_row(vec![
             Cell::new(algorithm),
-            Cell::new(&format!("{} ms", total_ms)),
+            Cell::new(format!("{} ms", total_ms)),
             avg_cell,
-            Cell::new(&format!("{:.0}", ops_per_sec)),
+            Cell::new(format!("{:.0}", ops_per_sec)),
         ]);
     }
 
@@ -367,7 +367,7 @@ mod tests {
     fn test_generate_test_numbers() {
         let numbers = generate_test_numbers(100, 50);
         assert_eq!(numbers.len(), 50);
-        assert!(numbers.iter().all(|&n| n >= 2 && n <= 100));
+        assert!(numbers.iter().all(|&n| (2..=100).contains(&n)));
     }
 
     #[test]

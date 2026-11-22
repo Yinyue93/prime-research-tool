@@ -32,7 +32,7 @@ pub fn factor(n: u64) -> Vec<u64> {
 
     // Handle small factors first
     for &p in &[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31] {
-        while remaining % p == 0 {
+        while remaining.is_multiple_of(p) {
             factors.push(p);
             remaining /= p;
         }
@@ -86,7 +86,7 @@ pub fn factor(n: u64) -> Vec<u64> {
 
 /// Pollard's Rho factorization algorithm
 pub fn pollard_rho(n: u64) -> Option<u64> {
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return Some(2);
     }
 
@@ -101,7 +101,7 @@ pub fn pollard_rho(n: u64) -> Option<u64> {
         while d == 1 {
             x = pollard_f(x, c, n);
             y = pollard_f(pollard_f(y, c, n), c, n);
-            d = gcd(if x > y { x - y } else { y - x }, n);
+            d = gcd(x.abs_diff(y), n);
 
             if d == n {
                 break;
@@ -118,7 +118,7 @@ pub fn pollard_rho(n: u64) -> Option<u64> {
 
 /// Brent's improvement to Pollard's Rho
 pub fn brent_factor(n: u64) -> Option<u64> {
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return Some(2);
     }
 
@@ -143,7 +143,7 @@ pub fn brent_factor(n: u64) -> Option<u64> {
 
                 for _ in 0..m {
                     y = pollard_f(y, c, n);
-                    q = mod_mul(q, if x > y { x - y } else { y - x }, n);
+                    q = mod_mul(q, x.abs_diff(y), n);
                 }
 
                 let g = gcd(q, n);
@@ -151,7 +151,7 @@ pub fn brent_factor(n: u64) -> Option<u64> {
                     if g == n {
                         loop {
                             ys = pollard_f(ys, c, n);
-                            let g2 = gcd(if x > ys { x - ys } else { ys - x }, n);
+                            let g2 = gcd(x.abs_diff(ys), n);
                             if g2 > 1 {
                                 if g2 < n {
                                     return Some(g2);
@@ -179,7 +179,7 @@ pub fn brent_factor(n: u64) -> Option<u64> {
 
 /// Elliptic Curve Method (ECM) for factorization
 pub fn ecm_factor(n: u64) -> Option<u64> {
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return Some(2);
     }
 
@@ -226,13 +226,7 @@ pub fn ecm_factor(n: u64) -> Option<u64> {
 fn trial_division(n: u64) -> Option<u64> {
     let limit = ((n as f64).sqrt() as u64).min(1_000_000);
 
-    for i in (3..=limit).step_by(2) {
-        if n % i == 0 {
-            return Some(i);
-        }
-    }
-
-    None
+    (3..=limit).step_by(2).find(|&i| n.is_multiple_of(i))
 }
 
 /// Pollard's Rho function: f(x) = x^2 + c (mod n)

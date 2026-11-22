@@ -383,7 +383,7 @@ fn bench_gap_prediction(c: &mut Criterion) {
         b.iter(|| {
             for &n in &test_numbers {
                 let gaps = black_box(gaps::find_gaps(black_box(n..(n + 1000))));
-                let has_large = black_box(gaps.iter().any(|g| gaps::is_large_gap(g)));
+                let has_large = black_box(gaps.iter().any(gaps::is_large_gap));
                 black_box(has_large);
             }
         });

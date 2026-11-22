@@ -157,7 +157,7 @@ pub fn factor_big(n: &BigUint, deadline: Option<Instant>) -> BigFactorization {
         }
 
         if let Some((root, k)) = perfect_power_big(&m) {
-            stack.extend(std::iter::repeat(root).take(k as usize));
+            stack.extend(std::iter::repeat_n(root, k as usize));
             continue;
         }
 

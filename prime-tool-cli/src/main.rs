@@ -206,7 +206,7 @@ async fn main() -> anyhow::Result<()> {
                 certainty: Certainty::from_proven(result.is_proven()),
                 execution_time_ms: start_time.elapsed().as_millis() as u64,
             };
-            print_output(&output, &cli.format, cli.output.as_ref().map(|v| &**v))?;
+            print_output(&output, &cli.format, cli.output.as_deref())?;
         }
 
         Commands::Factor { number, timeout } => {
@@ -222,7 +222,7 @@ async fn main() -> anyhow::Result<()> {
                 timeout_secs: timeout,
                 execution_time_ms: start_time.elapsed().as_millis() as u64,
             };
-            print_output(&output, &cli.format, cli.output.as_ref().map(|v| &**v))?;
+            print_output(&output, &cli.format, cli.output.as_deref())?;
         }
 
         Commands::Sieve {
@@ -253,7 +253,7 @@ async fn main() -> anyhow::Result<()> {
                 primes,
                 execution_time_ms: start_time.elapsed().as_millis() as u64,
             };
-            print_output(&output, &cli.format, cli.output.as_ref().map(|v| &**v))?;
+            print_output(&output, &cli.format, cli.output.as_deref())?;
         }
 
         Commands::Gaps {
@@ -293,7 +293,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("Gap histogram saved to: {}", plot_path.display());
             }
 
-            print_output(&output, &cli.format, cli.output.as_ref().map(|v| &**v))?;
+            print_output(&output, &cli.format, cli.output.as_deref())?;
         }
 
         Commands::Plot {
@@ -310,17 +310,17 @@ async fn main() -> anyhow::Result<()> {
                 }
                 PlotType::PrimeCount => {
                     let path =
-                        generate_prime_count_plot(range, &output_dir.join("prime_count.svg"))?;
+                        generate_prime_count_plot(range, output_dir.join("prime_count.svg"))?;
                     println!("Prime count plot saved to: {}", path.display());
                 }
                 PlotType::Gaps => {
                     let stats = gaps::analyze_gaps(range);
-                    let path = generate_gap_histogram(&stats, &output_dir.join("gaps.svg"))?;
+                    let path = generate_gap_histogram(&stats, output_dir.join("gaps.svg"))?;
                     println!("Gap histogram saved to: {}", path.display());
                 }
                 PlotType::Distribution => {
                     let path =
-                        generate_distribution_plot(range, &output_dir.join("distribution.svg"))?;
+                        generate_distribution_plot(range, output_dir.join("distribution.svg"))?;
                     println!("Distribution plot saved to: {}", path.display());
                 }
             }
@@ -359,8 +359,8 @@ async fn main() -> anyhow::Result<()> {
 fn parse_range(range_str: &str) -> anyhow::Result<Range<u64>> {
     if let Some((start, end)) = range_str.split_once("..") {
         let start: u64 = start.parse()?;
-        let end: u64 = if end.starts_with('=') {
-            end[1..].parse::<u64>()? + 1
+        let end: u64 = if let Some(inclusive_end) = end.strip_prefix('=') {
+            inclusive_end.parse::<u64>()? + 1
         } else {
             end.parse()?
         };

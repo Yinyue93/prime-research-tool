@@ -178,7 +178,7 @@ pub fn basic_sieve(range: Range<u64>) -> Vec<u64> {
             }
         }
 
-        let mut multiple = ((start + i - 1) / i) * i;
+        let mut multiple = start.div_ceil(i) * i;
         if multiple < i * i {
             multiple = i * i;
         }
@@ -214,7 +214,11 @@ pub fn optimized_sieve(range: Range<u64>) -> Vec<u64> {
     }
 
     // Only check odd numbers
-    let odd_start = if start % 2 == 0 { start + 1 } else { start };
+    let odd_start = if start.is_multiple_of(2) {
+        start + 1
+    } else {
+        start
+    };
 
     for n in (odd_start..end).step_by(2) {
         if is_prime(n) {
@@ -345,7 +349,7 @@ fn sieve_segment(start: u64, end: u64, base_primes: &[u64]) -> Vec<u64> {
         }
 
         // Find the first multiple of p >= start
-        let mut first_multiple = ((start + p - 1) / p) * p;
+        let mut first_multiple = start.div_ceil(p) * p;
         if first_multiple == p {
             first_multiple = p * p;
         }

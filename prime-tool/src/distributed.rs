@@ -103,7 +103,7 @@ impl DistributedCoordinator {
     pub async fn submit_work(&self, work: WorkUnit) -> Result<()> {
         let mut queue = self.work_queue.lock().await;
         queue.push(work);
-        queue.sort_by(|a, b| b.priority.cmp(&a.priority));
+        queue.sort_by_key(|a| std::cmp::Reverse(a.priority));
         Ok(())
     }
 
@@ -157,7 +157,7 @@ impl DistributedCoordinator {
     /// Distribute prime sieving across nodes
     pub async fn distribute_sieve(&self, range: Range<u64>, chunk_size: u64) -> Result<Vec<u64>> {
         let total_range = range.end - range.start;
-        let num_chunks = (total_range + chunk_size - 1) / chunk_size;
+        let num_chunks = total_range.div_ceil(chunk_size);
 
         // Create work units
         let mut work_units = Vec::new();

@@ -2,7 +2,6 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use prime_tool::*;
-use serde_json;
 use tokio::runtime::Runtime;
 
 /// Benchmark distributed coordinator overhead
